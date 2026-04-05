@@ -17,6 +17,7 @@ import Testing
     #expect(store.summary.waitingCount == 1)
     #expect(store.summary.completedCount == 1)
     #expect(store.topSession?.status == .waitingInput)
+    #expect(store.topSession?.attentionLevel == .needsReply)
 }
 
 @Test func replyValidationRequiresMessageAndSafeCapability() {
@@ -40,4 +41,11 @@ import Testing
     let nonEmptyValidation = bridge.validateReply(for: session, message: "继续")
     #expect(nonEmptyValidation.canSend == false)
     #expect(nonEmptyValidation.explanation.contains("真实桥接"))
+}
+
+@Test func fallbackSessionShowsIdleState() {
+    let fallback = MockData.sampleFallbackSession
+    #expect(fallback.sourceCLI == .unknown)
+    #expect(fallback.status == .discovered)
+    #expect(fallback.attentionLevel == .passive)
 }

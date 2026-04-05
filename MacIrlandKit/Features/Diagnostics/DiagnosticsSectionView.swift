@@ -23,6 +23,9 @@ public struct DiagnosticsSectionView: View {
                     LabeledContent("当前状态") {
                         Text(session.status.label)
                     }
+                    LabeledContent("关注等级") {
+                        Text(session.attentionLevel.title)
+                    }
                     LabeledContent("置信度") {
                         Text("\(Int(session.confidence * 100))% · \(session.confidenceLevel.rawValue)")
                     }

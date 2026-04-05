@@ -10,14 +10,18 @@ final class PanelCoordinator {
         let hostingView = NSHostingView(rootView: PanelView(viewModel: store))
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.title = "MacIrland"
         panel.center()
         panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.level = .statusBar
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hostingView
         self.panel = panel
     }

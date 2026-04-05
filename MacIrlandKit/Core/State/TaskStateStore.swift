@@ -66,6 +66,10 @@ public final class TaskStateStore {
     }
 
     public func sendDraftReply(for session: TaskSession) -> ReplyValidationResult {
-        replyBridge.sendReply(to: session, message: draftReply)
+        let result = replyBridge.sendReply(to: session, message: draftReply)
+        if result.canSend {
+            draftReply = ""
+        }
+        return result
     }
 }

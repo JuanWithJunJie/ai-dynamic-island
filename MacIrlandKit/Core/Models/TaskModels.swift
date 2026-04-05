@@ -170,6 +170,26 @@ public enum SoundCue: String, Codable, Sendable {
     case failed
 }
 
+public enum SessionAttentionLevel: String, Codable, Sendable {
+    case passive
+    case active
+    case needsReply
+    case warning
+
+    public var title: String {
+        switch self {
+        case .passive:
+            return "后台运行"
+        case .active:
+            return "活跃中"
+        case .needsReply:
+            return "等待你处理"
+        case .warning:
+            return "需要关注"
+        }
+    }
+}
+
 public struct EvidenceItem: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public let timestamp: Date
@@ -381,6 +401,19 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
 
     public var isAwaitingUser: Bool {
         status == .waitingInput || status == .replyAvailable
+    }
+
+    public var attentionLevel: SessionAttentionLevel {
+        switch status {
+        case .replyAvailable, .waitingInput:
+            return .needsReply
+        case .alert, .failed, .contextLost:
+            return .warning
+        case .running:
+            return .active
+        case .completed, .discovered, .recognizing:
+            return .passive
+        }
     }
 }
 

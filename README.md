@@ -12,6 +12,8 @@ This repository currently contains the first MVP scaffold:
 - `MacIrlandTests` test target
 - mock adapters for Codex / Claude Code / Gemini CLI
 - normalized task/session models, state store, diagnostics and panel UI
+- status bar capsule prototype for a dynamic-island-like summary surface
+- dark floating panel prototype for richer task detail review
 
 ## Structure
 
@@ -32,3 +34,4 @@ Once full Xcode is configured, the next steps are:
 1. run `swift test`
 2. optionally create/open an Xcode project or package workspace
 3. replace mock observation/reply services with real macOS integrations
+4. refine panel anchoring and animation to feel closer to a true dynamic-island interaction

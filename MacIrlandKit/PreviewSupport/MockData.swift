@@ -35,4 +35,37 @@ public enum MockData {
             )
         ]
     }
+
+    public static var sampleFallbackSession: TaskSession {
+        let now = Date.now
+        let identity = SessionIdentity(
+            cliKind: .unknown,
+            terminalAppIdentifier: "system",
+            windowIdentifier: "No active task",
+            ttyIdentifier: nil,
+            startedAt: now,
+            lastSeenAt: now
+        )
+
+        return TaskSession(
+            identity: identity,
+            title: "等待新的 AI CLI 任务",
+            status: .discovered,
+            priority: 0,
+            confidence: 0.4,
+            summary: "当前没有检测到可聚合的 CLI 会话。",
+            bridgeTarget: nil,
+            replyCapability: ReplyCapability(
+                status: .unavailable,
+                reason: "暂无可回复会话。",
+                targetDescription: "Unknown CLI",
+                channelStatus: "idle"
+            ),
+            lastActiveAt: now,
+            evidence: [],
+            recentEvents: [],
+            recentMessages: [],
+            quickActions: []
+        )
+    }
 }
