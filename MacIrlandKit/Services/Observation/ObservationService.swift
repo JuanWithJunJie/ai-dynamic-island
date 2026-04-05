@@ -4,25 +4,51 @@ public protocol ObservationProviding: Sendable {
     func latestEvents() -> [RawCLIEvent]
 }
 
-public struct MockObservationService: ObservationProviding {
-    public enum Mode: Sendable {
-        case fixed
-        case timeline
+public enum ObservationMode: String, CaseIterable, Codable, Sendable {
+    case fixed
+    case timeline
+
+    public var title: String {
+        switch self {
+        case .fixed:
+            return "静态样例"
+        case .timeline:
+            return "动态轮播"
+        }
     }
 
-    private let mode: Mode
+    public var description: String {
+        switch self {
+        case .fixed:
+            return "保持一组稳定的 mock 任务，便于检查布局和文案。"
+        case .timeline:
+            return "自动轮播等待输入、可回复和告警场景，更接近真实体验。"
+        }
+    }
+}
+
+public struct MockObservationService: ObservationProviding {
+    private let modeProvider: @Sendable () -> ObservationMode
     private let now: @Sendable () -> Date
 
     public init(
-        mode: Mode = .fixed,
+        mode: ObservationMode = .fixed,
         now: @escaping @Sendable () -> Date = { .now }
     ) {
-        self.mode = mode
+        self.modeProvider = { mode }
+        self.now = now
+    }
+
+    public init(
+        modeProvider: @escaping @Sendable () -> ObservationMode,
+        now: @escaping @Sendable () -> Date = { .now }
+    ) {
+        self.modeProvider = modeProvider
         self.now = now
     }
 
     public func latestEvents() -> [RawCLIEvent] {
-        switch mode {
+        switch modeProvider() {
         case .fixed:
             return MockData.sampleEvents
         case .timeline:

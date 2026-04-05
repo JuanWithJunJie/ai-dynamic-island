@@ -18,17 +18,19 @@ public struct IslandCompactView: View {
                             HStack(alignment: .center) {
                                 Text(session.sourceCLI.displayName)
                                     .font(.headline)
+                                    .foregroundStyle(.white)
                                 Spacer(minLength: 0)
                                 StatusBadge(status: session.status)
                             }
 
                             Text(session.title)
                                 .font(.title3.weight(.semibold))
+                                .foregroundStyle(.white)
                                 .lineLimit(1)
 
                             Text(session.summary)
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.7))
                                 .lineLimit(2)
                         }
                     }
@@ -42,13 +44,13 @@ public struct IslandCompactView: View {
 
                         Text("置信度 \(Int(session.confidence * 100))%")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.68))
                     }
                 }
-                .padding(16)
+                .padding(18)
                 .background(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .fill(Color.white.opacity(0.07))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)

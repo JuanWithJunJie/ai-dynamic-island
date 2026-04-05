@@ -20,7 +20,8 @@ public struct PanelView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
-                    IslandCompactView(session: viewModel.topSession)
+                    heroSection
+                    controlSection
                     OverviewSectionView(summary: viewModel.summary)
 
                     if let session = viewModel.topSession {
@@ -36,7 +37,7 @@ public struct PanelView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 560, minHeight: 680)
+        .frame(minWidth: 560, minHeight: 720)
         .toolbar {
             Button("刷新") {
                 viewModel.refresh()
@@ -72,12 +73,85 @@ public struct PanelView: View {
         }
     }
 
+    private var heroSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("实时概览")
+            IslandCompactView(session: viewModel.topSession)
+        }
+    }
+
+    private var controlSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionTitle("原型控制台")
+
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("观察源")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+
+                    Picker(
+                        "观察源",
+                        selection: Binding(
+                            get: { viewModel.observationMode },
+                            set: { viewModel.update(observationMode: $0) }
+                        )
+                    ) {
+                        ForEach(ObservationMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(viewModel.observationMode.description)
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("自动刷新")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                        Spacer(minLength: 0)
+                        Text(viewModel.autoRefreshLabel)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.62))
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { viewModel.autoRefreshInterval },
+                            set: { viewModel.update(autoRefreshInterval: $0) }
+                        ),
+                        in: 2 ... 12,
+                        step: 1
+                    )
+                    .tint(.blue)
+                }
+
+                HStack(spacing: 10) {
+                    Button("立即刷新") {
+                        viewModel.refresh()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+
+                    Label(viewModel.capabilityStatus.explanation, systemImage: "shield.lefthalf.filled")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(2)
+                }
+            }
+            .padding(18)
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+    }
+
     @ViewBuilder
     private func sessionSection(_ session: TaskSession) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("当前任务")
-                .font(.headline)
-                .foregroundStyle(.white)
+            sectionTitle("当前任务")
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
@@ -124,10 +198,7 @@ public struct PanelView: View {
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("关键事件")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                infoBlock(title: "关键事件") {
                     ForEach(session.recentEvents) { event in
                         HStack(alignment: .top, spacing: 8) {
                             Circle()
@@ -141,10 +212,7 @@ public struct PanelView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("最近消息")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                infoBlock(title: "最近消息") {
                     ForEach(session.recentMessages) { message in
                         Text(message.text)
                             .font(.subheadline)
@@ -155,10 +223,7 @@ public struct PanelView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("快捷回复")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                infoBlock(title: "快捷回复") {
                     HStack(spacing: 8) {
                         ForEach(session.quickActions.prefix(5), id: \.self) { action in
                             Button(action.title) {
@@ -175,10 +240,7 @@ public struct PanelView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("自由输入")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                infoBlock(title: "自由输入") {
                     TextField("输入要发送给 CLI 的回复", text: $viewModel.draftReply, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                     Button("发送文本") {
@@ -205,9 +267,7 @@ public struct PanelView: View {
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("最近收口")
-                .font(.headline)
-                .foregroundStyle(.white)
+            sectionTitle("最近收口")
 
             VStack(spacing: 10) {
                 ForEach(viewModel.recentHistory) { session in
@@ -240,6 +300,21 @@ public struct PanelView: View {
                     .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
+        }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(.white)
+    }
+
+    private func infoBlock<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+            content()
         }
     }
 

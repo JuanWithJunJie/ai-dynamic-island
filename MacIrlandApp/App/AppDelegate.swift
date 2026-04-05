@@ -4,11 +4,19 @@ import MacIrlandKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = TaskStateStore(observationService: MockObservationService(mode: .timeline))
+    private let localStore = InMemoryLocalStore(initialObservationMode: .timeline)
+    private lazy var observationService = MockObservationService(modeProvider: { [weak self] in
+        self?.localStore.loadObservationMode() ?? .timeline
+    })
+    lazy var store = TaskStateStore(
+        observationService: observationService,
+        localStore: localStore
+    )
 
     private var panelCoordinator: PanelCoordinator?
     private var statusBarController: StatusBarController?
     private var sessionTracking: Any?
+    private var refreshIntervalTracking: Any?
     private var refreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -20,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panelCoordinator = panelCoordinator
         self.statusBarController = statusBarController
         startSessionTracking()
+        startRefreshIntervalTracking()
         startRefreshTimer()
         NSApp.setActivationPolicy(.accessory)
     }
@@ -29,21 +38,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startSessionTracking() {
-        sessionTracking = withObservationTracking {
+        sessionTracking = withObservationTracking({
             _ = store.topSession
             _ = store.summary
             _ = store.lastRefreshAt
-        } onChange: { [weak self] in
+            return store.lastRefreshAt
+        }, onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.statusBarController?.update(session: self?.store.topSession)
                 self?.startSessionTracking()
             }
-        }
+        })
+    }
+
+    private func startRefreshIntervalTracking() {
+        refreshIntervalTracking = withObservationTracking({
+            _ = store.autoRefreshInterval
+            return store.autoRefreshInterval
+        }, onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.startRefreshTimer()
+                self?.startRefreshIntervalTracking()
+            }
+        })
     }
 
     private func startRefreshTimer() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: store.autoRefreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.store.refresh()
             }

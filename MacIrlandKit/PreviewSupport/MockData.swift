@@ -43,8 +43,8 @@ public enum MockData {
         case 0:
             return [
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-12),
                     cliKind: .claudeCode,
+                    timestamp: now.addingTimeInterval(-12),
                     snippet: "Need user input: please confirm whether to proceed with the refactor.",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.apple.Terminal",
@@ -54,8 +54,8 @@ public enum MockData {
                     )
                 ),
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-9),
                     cliKind: .codex,
+                    timestamp: now.addingTimeInterval(-9),
                     snippet: "Running tests for sidebar redesign…",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.googlecode.iterm2",
@@ -68,8 +68,8 @@ public enum MockData {
         case 1:
             return [
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-8),
                     cliKind: .claudeCode,
+                    timestamp: now.addingTimeInterval(-8),
                     snippet: "Reply available: draft explanation ready for your review.",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.apple.Terminal",
@@ -79,8 +79,8 @@ public enum MockData {
                     )
                 ),
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-6),
                     cliKind: .codex,
+                    timestamp: now.addingTimeInterval(-6),
                     snippet: "Running tests for sidebar redesign…",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.googlecode.iterm2",
@@ -90,8 +90,8 @@ public enum MockData {
                     )
                 ),
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-4),
                     cliKind: .gemini,
+                    timestamp: now.addingTimeInterval(-4),
                     snippet: "Completed draft summary for release checklist.",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.apple.Terminal",
@@ -104,8 +104,8 @@ public enum MockData {
         default:
             return [
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-7),
                     cliKind: .codex,
+                    timestamp: now.addingTimeInterval(-7),
                     snippet: "Error: failed to apply the sidebar patch cleanly.",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.googlecode.iterm2",
@@ -115,8 +115,8 @@ public enum MockData {
                     )
                 ),
                 RawCLIEvent(
-                    timestamp: now.addingTimeInterval(-5),
                     cliKind: .claudeCode,
+                    timestamp: now.addingTimeInterval(-5),
                     snippet: "Running follow-up analysis for refactor flow.",
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: "com.apple.Terminal",
