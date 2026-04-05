@@ -53,13 +53,17 @@ public struct PanelView: View {
 
             Spacer(minLength: 0)
 
-            if let session = viewModel.topSession {
-                VStack(alignment: .trailing, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 6) {
+                if let session = viewModel.topSession {
                     StatusBadge(status: session.status)
                     Text(session.sourceCLI.displayName)
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.72))
                 }
+
+                Text(refreshLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
     }
@@ -92,6 +96,8 @@ public struct PanelView: View {
                             .foregroundStyle(.white.opacity(0.55))
                     }
                 }
+
+                statusHighlights(for: session)
 
                 if let target = session.bridgeTarget {
                     LabeledContent("目标会话") {
@@ -173,7 +179,40 @@ public struct PanelView: View {
             }
             .padding(18)
             .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(IslandAccent.color(for: session.status).opacity(0.14), lineWidth: 1)
+            )
         }
+    }
+
+    private func statusHighlights(for session: TaskSession) -> some View {
+        HStack(spacing: 10) {
+            highlightChip(title: session.attentionLevel.title, systemImage: attentionSymbol(for: session), tint: IslandAccent.color(for: session.status))
+            highlightChip(title: "置信度 \(Int(session.confidence * 100))%", systemImage: "scope", tint: .white.opacity(0.85))
+            if session.canReplySafely {
+                highlightChip(title: "可安全回复", systemImage: "arrowshape.turn.up.left.fill", tint: .green)
+            } else {
+                highlightChip(title: "仅建议确认", systemImage: "hand.raised.fill", tint: .orange)
+            }
+        }
+    }
+
+    private func highlightChip(title: String, systemImage: String, tint: Color) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
+    private var refreshLabel: String {
+        let elapsed = max(Int(Date.now.timeIntervalSince(viewModel.lastRefreshAt)), 0)
+        if elapsed < 2 {
+            return "刚刚更新"
+        }
+        return "\(elapsed) 秒前更新"
     }
 
     private func attentionSymbol(for session: TaskSession) -> String {

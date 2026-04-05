@@ -10,11 +10,6 @@ public struct StatusCapsuleView: View {
     public var body: some View {
         HStack(spacing: 10) {
             StatusSpriteView(status: session.status)
-                .overlay(alignment: .bottomTrailing) {
-                    Circle()
-                        .fill(IslandAccent.color(for: session.status))
-                        .frame(width: 10, height: 10)
-                }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.title)
@@ -45,6 +40,7 @@ public struct StatusCapsuleView: View {
             Capsule()
                 .strokeBorder(IslandAccent.color(for: session.status).opacity(0.25), lineWidth: 1)
         )
+        .shadow(color: IslandAccent.color(for: session.status).opacity(0.18), radius: 10, y: 4)
         .help(session.summary)
     }
 }

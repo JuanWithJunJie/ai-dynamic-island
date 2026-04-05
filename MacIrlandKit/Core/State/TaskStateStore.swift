@@ -7,6 +7,7 @@ public final class TaskStateStore {
     public private(set) var sessions: [TaskSession]
     public private(set) var summary: AppTaskSummary
     public private(set) var capabilityStatus: CapabilityStatus
+    public private(set) var lastRefreshAt: Date
     public var soundMode: SoundMode
     public var draftReply: String
 
@@ -37,6 +38,7 @@ public final class TaskStateStore {
         self.soundMode = localStore.loadSoundMode()
         self.draftReply = ""
         self.capabilityStatus = permissionService.currentStatus()
+        self.lastRefreshAt = .now
 
         let resolved = sessionResolver.resolveSessions(from: observationService.latestEvents(), using: registry)
         self.sessions = aggregationEngine.prioritize(resolved)
@@ -53,6 +55,7 @@ public final class TaskStateStore {
             sessionResolver.resolveSessions(from: observationService.latestEvents(), using: registry)
         )
         summary = aggregationEngine.summary(for: sessions)
+        lastRefreshAt = .now
     }
 
     public func update(soundMode: SoundMode) {

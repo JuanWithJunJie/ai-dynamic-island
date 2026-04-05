@@ -5,9 +5,28 @@ public protocol ObservationProviding: Sendable {
 }
 
 public struct MockObservationService: ObservationProviding {
-    public init() {}
+    public enum Mode: Sendable {
+        case fixed
+        case timeline
+    }
+
+    private let mode: Mode
+    private let now: @Sendable () -> Date
+
+    public init(
+        mode: Mode = .fixed,
+        now: @escaping @Sendable () -> Date = { .now }
+    ) {
+        self.mode = mode
+        self.now = now
+    }
 
     public func latestEvents() -> [RawCLIEvent] {
-        MockData.sampleEvents
+        switch mode {
+        case .fixed:
+            return MockData.sampleEvents
+        case .timeline:
+            return MockData.timelineEvents(at: now())
+        }
     }
 }

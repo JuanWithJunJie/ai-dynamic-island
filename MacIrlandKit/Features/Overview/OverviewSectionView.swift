@@ -13,10 +13,10 @@ public struct OverviewSectionView: View {
                 .font(.headline)
 
             HStack(spacing: 12) {
-                MetricCard(title: "运行中", value: summary.runningCount, tint: .blue)
-                MetricCard(title: "等待用户", value: summary.waitingCount, tint: .orange)
-                MetricCard(title: "已完成", value: summary.completedCount, tint: .green)
-                MetricCard(title: "异常", value: summary.alertCount, tint: .red)
+                MetricCard(title: "运行中", value: summary.runningCount, tint: .blue, systemImage: "bolt.fill")
+                MetricCard(title: "等待用户", value: summary.waitingCount, tint: .orange, systemImage: "message.badge.fill")
+                MetricCard(title: "已完成", value: summary.completedCount, tint: .green, systemImage: "checkmark.circle.fill")
+                MetricCard(title: "异常", value: summary.alertCount, tint: .red, systemImage: "exclamationmark.triangle.fill")
             }
         }
     }
@@ -26,10 +26,11 @@ private struct MetricCard: View {
     let title: String
     let value: Int
     let tint: Color
+    let systemImage: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
+            Label(title, systemImage: systemImage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("\(value)")

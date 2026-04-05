@@ -49,6 +49,11 @@ public struct StatusSpriteView: View {
             .foregroundStyle(IslandAccent.color(for: status))
             .frame(width: 42, height: 42)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(IslandAccent.color(for: status))
+                    .frame(width: 9, height: 9)
+            }
     }
 
     private var sprite: String {

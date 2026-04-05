@@ -21,7 +21,7 @@ final class PanelCoordinator {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.contentView = hostingView
         self.panel = panel
     }
@@ -30,7 +30,9 @@ final class PanelCoordinator {
         if panel.isVisible {
             panel.orderOut(nil)
         } else {
+            panel.alphaValue = 0
             panel.makeKeyAndOrderFront(nil)
+            panel.animator().alphaValue = 1
             NSApp.activate(ignoringOtherApps: true)
         }
     }

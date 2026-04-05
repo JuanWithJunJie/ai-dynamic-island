@@ -49,3 +49,27 @@ import Testing
     #expect(fallback.status == .discovered)
     #expect(fallback.attentionLevel == .passive)
 }
+
+@Test func timelineObservationCyclesThroughPrototypeStates() {
+    let base = Date(timeIntervalSince1970: 9)
+    let waitingService = MockObservationService(mode: .timeline, now: { base })
+    let replyService = MockObservationService(mode: .timeline, now: { base.addingTimeInterval(1) })
+    let alertService = MockObservationService(mode: .timeline, now: { base.addingTimeInterval(2) })
+
+    let waitingSessions = SessionResolver().resolveSessions(
+        from: waitingService.latestEvents(),
+        using: AdapterRegistry(adapters: [BuiltInCLIAdapter.codex, BuiltInCLIAdapter.claudeCode, BuiltInCLIAdapter.gemini])
+    )
+    let replySessions = SessionResolver().resolveSessions(
+        from: replyService.latestEvents(),
+        using: AdapterRegistry(adapters: [BuiltInCLIAdapter.codex, BuiltInCLIAdapter.claudeCode, BuiltInCLIAdapter.gemini])
+    )
+    let alertSessions = SessionResolver().resolveSessions(
+        from: alertService.latestEvents(),
+        using: AdapterRegistry(adapters: [BuiltInCLIAdapter.codex, BuiltInCLIAdapter.claudeCode, BuiltInCLIAdapter.gemini])
+    )
+
+    #expect(waitingSessions.contains(where: { $0.status == .waitingInput }))
+    #expect(replySessions.contains(where: { $0.status == .replyAvailable }))
+    #expect(alertSessions.contains(where: { $0.status == .alert }))
+}
