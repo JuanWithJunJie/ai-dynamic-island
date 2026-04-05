@@ -1,0 +1,43 @@
+import Testing
+@testable import MacIrlandKit
+
+@Test func taskAggregationSummaryCountsStates() {
+    let store = TaskStateStore(
+        observationService: MockObservationService(),
+        sessionResolver: SessionResolver(),
+        aggregationEngine: TaskAggregationEngine(),
+        replyBridge: MockReplyBridgeService(),
+        permissionService: PlaceholderPermissionService(),
+        localStore: InMemoryLocalStore(),
+        registry: AdapterRegistry(adapters: [BuiltInCLIAdapter.codex, BuiltInCLIAdapter.claudeCode, BuiltInCLIAdapter.gemini])
+    )
+
+    #expect(store.sessions.count == 3)
+    #expect(store.summary.runningCount == 1)
+    #expect(store.summary.waitingCount == 1)
+    #expect(store.summary.completedCount == 1)
+    #expect(store.topSession?.status == .waitingInput)
+}
+
+@Test func replyValidationRequiresMessageAndSafeCapability() {
+    let bridge = MockReplyBridgeService()
+    let session = BuiltInCLIAdapter.codex.buildSession(
+        from: RawCLIEvent(
+            cliKind: .codex,
+            snippet: "reply required",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Codex task",
+                commandLine: "codex",
+                ttyIdentifier: nil
+            )
+        )
+    )!
+
+    let emptyValidation = bridge.validateReply(for: session, message: "   ")
+    #expect(emptyValidation.canSend == false)
+
+    let nonEmptyValidation = bridge.validateReply(for: session, message: "继续")
+    #expect(nonEmptyValidation.canSend == false)
+    #expect(nonEmptyValidation.explanation.contains("真实桥接"))
+}
