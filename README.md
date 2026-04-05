@@ -15,6 +15,7 @@ This repository currently contains the first MVP scaffold:
 - status bar capsule prototype for a dynamic-island-like summary surface
 - dark floating panel prototype for richer task detail review
 - mock timeline refresh loop so summary state and top session change live in the prototype
+- lightweight recent-history and recovery guidance blocks for task wrap-up states
 
 ## Structure
 

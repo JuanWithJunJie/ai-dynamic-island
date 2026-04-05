@@ -347,6 +347,7 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
     public let recentEvents: [SessionEvent]
     public let recentMessages: [MessageSnippet]
     public let quickActions: [ReplyActionType]
+    public let recoverySuggestion: String?
 
     public init(
         id: UUID = UUID(),
@@ -362,7 +363,8 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
         evidence: [EvidenceItem],
         recentEvents: [SessionEvent],
         recentMessages: [MessageSnippet],
-        quickActions: [ReplyActionType]
+        quickActions: [ReplyActionType],
+        recoverySuggestion: String? = nil
     ) {
         self.id = id
         self.identity = identity
@@ -378,6 +380,7 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
         self.recentEvents = recentEvents
         self.recentMessages = recentMessages
         self.quickActions = quickActions
+        self.recoverySuggestion = recoverySuggestion
     }
 
     public var sourceCLI: CLIKind {

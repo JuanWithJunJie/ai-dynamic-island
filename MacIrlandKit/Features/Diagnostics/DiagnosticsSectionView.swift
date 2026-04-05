@@ -33,6 +33,19 @@ public struct DiagnosticsSectionView: View {
                         Text(session.replyCapability.reason)
                     }
 
+                    if let recoverySuggestion = session.recoverySuggestion {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("恢复建议", systemImage: "wrench.and.screwdriver.fill")
+                                .font(.subheadline.weight(.medium))
+                            Text(recoverySuggestion)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
                     ForEach(session.evidence.prefix(3)) { evidence in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(evidence.summary)

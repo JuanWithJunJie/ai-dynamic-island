@@ -75,7 +75,8 @@ public struct BuiltInCLIAdapter: CLIAdapter {
                     isError: status == .alert || status == .failed
                 )
             ],
-            quickActions: supportedQuickActions
+            quickActions: supportedQuickActions,
+            recoverySuggestion: Self.recoverySuggestion(for: status)
         )
     }
 
@@ -149,6 +150,23 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             return .contextLost
         default:
             return .started
+        }
+    }
+
+    private static func recoverySuggestion(for status: TaskStatus) -> String? {
+        switch status {
+        case .waitingInput:
+            return "补充必要信息或确认下一步，任务即可继续。"
+        case .replyAvailable:
+            return "检查建议回复后可直接回到对应 CLI 会话继续推进。"
+        case .alert, .failed:
+            return "建议先查看错误片段，再选择重试或补充上下文。"
+        case .completed:
+            return "任务已完成，可整理结果摘要并决定是否继续下一步。"
+        case .contextLost:
+            return "上下文已丢失，建议回到原终端重新建立会话。"
+        case .running, .discovered, .recognizing:
+            return nil
         }
     }
 }

@@ -158,7 +158,8 @@ public enum MockData {
             evidence: [],
             recentEvents: [],
             recentMessages: [],
-            quickActions: []
+            quickActions: [],
+            recoverySuggestion: "可以先启动一个 AI CLI 任务，系统会自动尝试识别。"
         )
     }
 }

@@ -49,6 +49,14 @@ public final class TaskStateStore {
         sessions.first
     }
 
+    public var recentHistory: [TaskSession] {
+        sessions
+            .filter { $0.status.isTerminal || $0.status == .alert }
+            .sorted { $0.lastActiveAt > $1.lastActiveAt }
+            .prefix(3)
+            .map { $0 }
+    }
+
     public func refresh() {
         capabilityStatus = permissionService.currentStatus()
         sessions = aggregationEngine.prioritize(

@@ -18,6 +18,8 @@ import Testing
     #expect(store.summary.completedCount == 1)
     #expect(store.topSession?.status == .waitingInput)
     #expect(store.topSession?.attentionLevel == .needsReply)
+    #expect(store.recentHistory.count == 1)
+    #expect(store.recentHistory.first?.status == .completed)
 }
 
 @Test func replyValidationRequiresMessageAndSafeCapability() {
@@ -48,6 +50,7 @@ import Testing
     #expect(fallback.sourceCLI == .unknown)
     #expect(fallback.status == .discovered)
     #expect(fallback.attentionLevel == .passive)
+    #expect(fallback.recoverySuggestion != nil)
 }
 
 @Test func timelineObservationCyclesThroughPrototypeStates() {
@@ -72,4 +75,5 @@ import Testing
     #expect(waitingSessions.contains(where: { $0.status == .waitingInput }))
     #expect(replySessions.contains(where: { $0.status == .replyAvailable }))
     #expect(alertSessions.contains(where: { $0.status == .alert }))
+    #expect(alertSessions.contains(where: { $0.recoverySuggestion != nil }))
 }

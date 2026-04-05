@@ -27,6 +27,10 @@ public struct PanelView: View {
                         sessionSection(session)
                     }
 
+                    if !viewModel.recentHistory.isEmpty {
+                        historySection
+                    }
+
                     DiagnosticsSectionView(session: viewModel.topSession, capabilityStatus: viewModel.capabilityStatus)
                 }
                 .padding(20)
@@ -107,6 +111,19 @@ public struct PanelView: View {
                     .foregroundStyle(.white)
                 }
 
+                if let recoverySuggestion = session.recoverySuggestion {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("下一步建议", systemImage: "sparkles")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                        Text(recoverySuggestion)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.72))
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("关键事件")
                         .font(.subheadline.weight(.medium))
@@ -183,6 +200,46 @@ public struct PanelView: View {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .strokeBorder(IslandAccent.color(for: session.status).opacity(0.14), lineWidth: 1)
             )
+        }
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("最近收口")
+                .font(.headline)
+                .foregroundStyle(.white)
+
+            VStack(spacing: 10) {
+                ForEach(viewModel.recentHistory) { session in
+                    HStack(alignment: .top, spacing: 12) {
+                        StatusSpriteView(status: session.status)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(session.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                StatusBadge(status: session.status)
+                            }
+
+                            Text(session.summary)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(2)
+
+                            if let recoverySuggestion = session.recoverySuggestion {
+                                Text(recoverySuggestion)
+                                    .font(.caption)
+                                    .foregroundStyle(IslandAccent.color(for: session.status))
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
         }
     }
 
