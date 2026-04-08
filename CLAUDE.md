@@ -68,6 +68,7 @@
 - `MacIrlandTests/TaskStateStoreTests.swift`
 - `MacIrlandTests/AppLaunchSupportTests.swift`
 - `MacIrlandTests/UIDisplayFormattingTests.swift`
+- `docs/guides/github-ssh-push.md`：GitHub SSH 推送配置与排障指引；如果需要让 Claude Code 处理 SSH key、切换 `origin`、或执行 SSH push，优先引用这份文档
 
 ## 本次修改（2026-04-06）
 - 修改 1：新增 `MacIrlandApp/App/LaunchSupport.swift`，集中处理启动方式识别和错误启动提示文案。
@@ -111,6 +112,10 @@
 - 结果 16：我已执行 `tccutil reset AppleEvents com.macirland.app`，旧的错误授权状态已经清掉；下一次 MacIrland 真实访问 Terminal / iTerm 时，系统会重新弹出授权。
 - 结果 17：相关逻辑已有单元测试覆盖；本轮本地验证命令为 `swift test --filter AppLaunchSupportTests`、`swift test --filter UIDisplayFormattingTests`、`swift test`、`swift build`。
 - 结果 18：现在像 “`command` 为空、`windowTitle` 很弱，但 transcript 里有 `Claude Code v2.x` / `Sonnet ... / API Usage Billing`” 这样的 iTerm 会话，也能被识别进 session 列表；对应防误判用例仍保持通过。
+- 结果 19：session detail 的 timeline 已从“最近事件 + 最近消息”的临时拼接，升级为当前 app 运行期内的正式历史流；refresh 时会保留已有历史，只在状态真正变化时追加新的 phase entry。
+- 结果 20：用户执行 quick action、发送自定义回复、以及发送被拒绝的情况，现在都会写入同一条 runtime history；详情区可以直接看见自己何时介入过会话。
+- 结果 21：timeline display formatting 与详情页消费路径都已切换到 `historyEntries`；等待输入、失败、用户操作等节点现在有稳定的 icon / tint / 时间映射，详情区标题文案也已改成 phase-history 语义。
+- 结果 22：本轮 runtime history 相关验证已通过：`swift test --filter TaskStateStoreTests`、`swift test --filter UIDisplayFormattingTests`、`swift test`、`swift build` 全部成功。
 
 ## 下一步建议
 如果继续沿着 `2026-04-06-ui-reference-alignment.md` 往下推进，下一刀更值得做的是：把 timeline 从“最近消息 + 最近事件”扩成更完整的任务历史，并补上更强的视觉层次或细微动效；本轮先不做真实 reply bridge、不做 Codex/Gemini 全量真实接入。

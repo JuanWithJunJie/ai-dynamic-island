@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SessionDetailView: View {
+    static let timelineSubtitle = "按时间倒序查看阶段变化、用户操作和回复痕迹。"
+
     @Bindable var viewModel: TaskStateStore
     let session: TaskSession
     @Binding var lastActionResult: ReplyValidationResult?
@@ -12,10 +14,16 @@ struct SessionDetailView: View {
             taskSummarySection
 
             if !session.timelineEntries.isEmpty {
-                detailSection("活动时间线", subtitle: "按时间倒序查看事件和最近消息。") {
+                detailSection("活动时间线", subtitle: Self.timelineSubtitle) {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(session.timelineEntries) { entry in
-                            TimelineRow(entry: entry)
+                            TimelineRow(
+                                systemImage: entry.systemImage,
+                                tint: entry.tint,
+                                title: entry.title,
+                                detail: entry.detail,
+                                timeText: entry.timeText
+                            )
                         }
                     }
                 }
@@ -109,16 +117,20 @@ struct SessionDetailView: View {
 }
 
 private struct TimelineRow: View {
-    let entry: SessionTimelineEntry
+    let systemImage: String
+    let tint: TaskStatus
+    let title: String
+    let detail: String
+    let timeText: String
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 6) {
-                Image(systemName: entry.systemImage)
+                Image(systemName: systemImage)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(IslandAccent.color(for: entry.tint))
+                    .foregroundStyle(IslandAccent.color(for: tint))
                     .frame(width: 28, height: 28)
-                    .background(IslandAccent.color(for: entry.tint).opacity(0.16), in: Circle())
+                    .background(IslandAccent.color(for: tint).opacity(0.16), in: Circle())
 
                 Rectangle()
                     .fill(MacIrlandPalette.border)
@@ -128,16 +140,16 @@ private struct TimelineRow: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(entry.title)
+                    Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     Spacer()
-                    Text(entry.timeText)
+                    Text(timeText)
                         .font(.caption)
                         .foregroundStyle(MacIrlandPalette.tertiaryText)
                 }
 
-                Text(entry.detail)
+                Text(detail)
                     .font(.subheadline)
                     .foregroundStyle(MacIrlandPalette.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)

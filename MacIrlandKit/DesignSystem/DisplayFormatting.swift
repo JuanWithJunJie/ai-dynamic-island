@@ -1,14 +1,57 @@
 import Foundation
 
-public struct SessionTimelineEntry: Identifiable {
-    public let id: UUID
-    public let timestamp: Date
-    public let title: String
-    public let detail: String
-    public let systemImage: String
-    public let tint: TaskStatus
+public typealias SessionTimelineEntry = SessionHistoryEntry
 
-    public var timeText: String {
+public extension SessionHistoryEntry {
+    var systemImage: String {
+        switch kind {
+        case .phaseDiscovered, .phaseRunning:
+            return "bolt.fill"
+        case .phaseWaitingInput:
+            return "hand.raised.fill"
+        case .phaseReplyAvailable:
+            return "paperplane.fill"
+        case .phaseAlert:
+            return "exclamationmark.triangle.fill"
+        case .phaseCompleted:
+            return "checkmark.circle.fill"
+        case .phaseFailed, .userReplyRejected:
+            return "xmark.octagon.fill"
+        case .phaseContextLost:
+            return "questionmark.circle.fill"
+        case .userQuickAction, .userCustomReply:
+            return "person.fill.badge.plus"
+        }
+    }
+
+    var tint: TaskStatus {
+        if let relatedStatus {
+            return relatedStatus
+        }
+
+        switch kind {
+        case .phaseDiscovered:
+            return .discovered
+        case .phaseRunning:
+            return .running
+        case .phaseWaitingInput:
+            return .waitingInput
+        case .phaseReplyAvailable:
+            return .replyAvailable
+        case .phaseAlert:
+            return .alert
+        case .phaseCompleted:
+            return .completed
+        case .phaseFailed, .userReplyRejected:
+            return .failed
+        case .phaseContextLost:
+            return .contextLost
+        case .userQuickAction, .userCustomReply:
+            return .waitingInput
+        }
+    }
+
+    var timeText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: timestamp)
@@ -50,30 +93,8 @@ public extension TaskSession {
         }
     }
 
-    var timelineEntries: [SessionTimelineEntry] {
-        let eventEntries = recentEvents.map { event in
-            SessionTimelineEntry(
-                id: event.id,
-                timestamp: event.timestamp,
-                title: event.kind.displayTitle,
-                detail: event.message,
-                systemImage: event.kind.systemImage,
-                tint: event.kind.accentStatus
-            )
-        }
-
-        let messageEntries = recentMessages.map { message in
-            SessionTimelineEntry(
-                id: message.id,
-                timestamp: message.timestamp,
-                title: message.kind.displayTitle,
-                detail: message.text,
-                systemImage: message.kind.systemImage,
-                tint: message.isError ? .failed : (message.isHighlighted ? .waitingInput : status)
-            )
-        }
-
-        return (messageEntries + eventEntries).sorted { $0.timestamp > $1.timestamp }
+    var timelineEntries: [SessionHistoryEntry] {
+        historyEntries.sorted { $0.timestamp > $1.timestamp }
     }
 }
 
@@ -84,100 +105,5 @@ public extension AppTaskSummary {
 
     var totalCount: Int {
         runningCount + waitingCount + completedCount + alertCount
-    }
-}
-
-private extension SessionEventKind {
-    var displayTitle: String {
-        switch self {
-        case .started:
-            return "Started"
-        case .resumed:
-            return "Resumed"
-        case .waitingForInput:
-            return "Waiting"
-        case .replyCapabilityChanged:
-            return "Reply Ready"
-        case .warning:
-            return "Warning"
-        case .error:
-            return "Error"
-        case .completed:
-            return "Completed"
-        case .failed:
-            return "Failed"
-        case .contextLost:
-            return "Context Lost"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .started, .resumed:
-            return "bolt.fill"
-        case .waitingForInput:
-            return "hand.raised.fill"
-        case .replyCapabilityChanged:
-            return "paperplane.fill"
-        case .warning:
-            return "exclamationmark.triangle.fill"
-        case .error, .failed:
-            return "xmark.octagon.fill"
-        case .completed:
-            return "checkmark.circle.fill"
-        case .contextLost:
-            return "questionmark.circle.fill"
-        }
-    }
-
-    var accentStatus: TaskStatus {
-        switch self {
-        case .waitingForInput:
-            return .waitingInput
-        case .replyCapabilityChanged:
-            return .replyAvailable
-        case .warning:
-            return .alert
-        case .error, .failed:
-            return .failed
-        case .completed:
-            return .completed
-        case .contextLost:
-            return .contextLost
-        case .started, .resumed:
-            return .running
-        }
-    }
-}
-
-private extension MessageSnippetKind {
-    var displayTitle: String {
-        switch self {
-        case .assistant:
-            return "最新消息"
-        case .user:
-            return "你的输入"
-        case .system:
-            return "系统提示"
-        case .log:
-            return "日志"
-        case .error:
-            return "错误输出"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .assistant:
-            return "sparkles"
-        case .user:
-            return "person.fill"
-        case .system:
-            return "gearshape.fill"
-        case .log:
-            return "text.alignleft"
-        case .error:
-            return "exclamationmark.octagon.fill"
-        }
     }
 }

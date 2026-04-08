@@ -58,7 +58,22 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertEqual(session.primaryGuidanceText, "等待你确认、补充信息或继续执行。")
     }
 
-    func testTimelineEntriesSortNewestFirstAcrossEventsAndMessages() {
+    func testHistoryEntryFormatsWaitingPhaseRow() {
+        let entry = SessionHistoryEntry(
+            timestamp: Date(timeIntervalSince1970: 200),
+            kind: .phaseWaitingInput,
+            title: "等待输入",
+            detail: "Need user input",
+            relatedStatus: .waitingInput
+        )
+
+        XCTAssertEqual(entry.systemImage, "hand.raised.fill")
+        XCTAssertEqual(entry.tint, .waitingInput)
+        XCTAssertEqual(entry.timeText.count, 5)
+        XCTAssertEqual(entry.timeText.filter { $0 == ":" }.count, 1)
+    }
+
+    func testTimelineEntriesComeFromHistoryEntriesSortedNewestFirst() {
         let session = TaskSession(
             identity: SessionIdentity(
                 cliKind: .claudeCode,
@@ -84,23 +99,139 @@ final class UIDisplayFormattingTests: XCTestCase {
             evidence: [],
             recentEvents: [
                 SessionEvent(
-                    timestamp: Date(timeIntervalSince1970: 100),
-                    kind: .started,
-                    message: "Started scan"
+                    timestamp: Date(timeIntervalSince1970: 500),
+                    kind: .completed,
+                    message: "Old synthetic event should not drive ordering"
                 )
             ],
             recentMessages: [
                 MessageSnippet(
-                    timestamp: Date(timeIntervalSince1970: 200),
+                    timestamp: Date(timeIntervalSince1970: 600),
                     kind: .assistant,
-                    text: "Latest assistant update"
+                    text: "Old synthetic message should not drive ordering"
+                )
+            ],
+            historyEntries: [
+                SessionHistoryEntry(
+                    timestamp: Date(timeIntervalSince1970: 100),
+                    kind: .phaseRunning,
+                    title: "运行中",
+                    detail: "Started scan",
+                    relatedStatus: .running
+                ),
+                SessionHistoryEntry(
+                    timestamp: Date(timeIntervalSince1970: 200),
+                    kind: .phaseWaitingInput,
+                    title: "等待输入",
+                    detail: "Need user confirmation",
+                    relatedStatus: .waitingInput
+                ),
+                SessionHistoryEntry(
+                    timestamp: Date(timeIntervalSince1970: 150),
+                    kind: .phaseReplyAvailable,
+                    title: "可回复",
+                    detail: "Reply is available",
+                    relatedStatus: .replyAvailable
                 )
             ],
             quickActions: [.continueExecution]
         )
 
-        XCTAssertEqual(session.timelineEntries.map(\.title), ["最新消息", "Started"])
-        XCTAssertEqual(session.timelineEntries.first?.detail, "Latest assistant update")
+        XCTAssertEqual(session.timelineEntries.map(\.title), ["等待输入", "可回复", "运行中"])
+        XCTAssertEqual(session.timelineEntries.map(\.detail), ["Need user confirmation", "Reply is available", "Started scan"])
+    }
+
+    func testTimelineEntriesKeepUserActionHistoryEntriesInOrdering() {
+        let session = TaskSession(
+            identity: SessionIdentity(
+                cliKind: .claudeCode,
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowIdentifier: "Claude Code · history",
+                ttyIdentifier: "ttys008",
+                startedAt: Date(timeIntervalSince1970: 0),
+                lastSeenAt: Date(timeIntervalSince1970: 300)
+            ),
+            title: "History session",
+            status: .waitingInput,
+            priority: 1,
+            confidence: 0.91,
+            summary: "Reviewing runtime history",
+            bridgeTarget: nil,
+            replyCapability: ReplyCapability(
+                status: .manualConfirmationRequired,
+                reason: "Mock bridge",
+                targetDescription: "Claude Code",
+                channelStatus: "mock"
+            ),
+            lastActiveAt: Date(timeIntervalSince1970: 300),
+            evidence: [],
+            recentEvents: [],
+            recentMessages: [],
+            historyEntries: [
+                SessionHistoryEntry(
+                    timestamp: Date(timeIntervalSince1970: 100),
+                    kind: .phaseRunning,
+                    title: "运行中",
+                    detail: "Started scan",
+                    relatedStatus: .running
+                ),
+                SessionHistoryEntry(
+                    timestamp: Date(timeIntervalSince1970: 250),
+                    kind: .userQuickAction,
+                    title: "快速操作 · 继续执行",
+                    detail: "请继续执行。",
+                    relatedStatus: .waitingInput
+                ),
+                SessionHistoryEntry(
+                    timestamp: Date(timeIntervalSince1970: 200),
+                    kind: .phaseWaitingInput,
+                    title: "等待输入",
+                    detail: "Need user confirmation",
+                    relatedStatus: .waitingInput
+                )
+            ],
+            quickActions: [.continueExecution]
+        )
+
+        XCTAssertEqual(session.timelineEntries.map(\.kind), [.userQuickAction, .phaseWaitingInput, .phaseRunning])
+        XCTAssertEqual(session.timelineEntries.map(\.title), ["快速操作 · 继续执行", "等待输入", "运行中"])
+    }
+
+    func testTimelineRowsUseHistoryEntryPresentationFieldsForAttentionAndUserActions() {
+        let waitingEntry = SessionHistoryEntry(
+            timestamp: Date(timeIntervalSince1970: 200),
+            kind: .phaseWaitingInput,
+            title: "等待输入",
+            detail: "Need user confirmation",
+            relatedStatus: .waitingInput
+        )
+        let failedEntry = SessionHistoryEntry(
+            timestamp: Date(timeIntervalSince1970: 210),
+            kind: .phaseFailed,
+            title: "执行失败",
+            detail: "Command exited with status 1",
+            relatedStatus: .failed
+        )
+        let userActionEntry = SessionHistoryEntry(
+            timestamp: Date(timeIntervalSince1970: 220),
+            kind: .userQuickAction,
+            title: "快速操作 · 继续执行",
+            detail: "请继续执行。",
+            relatedStatus: .waitingInput
+        )
+
+        XCTAssertEqual(waitingEntry.systemImage, "hand.raised.fill")
+        XCTAssertEqual(waitingEntry.tint, .waitingInput)
+        XCTAssertEqual(failedEntry.systemImage, "xmark.octagon.fill")
+        XCTAssertEqual(failedEntry.tint, .failed)
+        XCTAssertEqual(userActionEntry.systemImage, "person.fill.badge.plus")
+        XCTAssertEqual(userActionEntry.title, "快速操作 · 继续执行")
+        XCTAssertEqual(userActionEntry.detail, "请继续执行。")
+    }
+
+    @MainActor
+    func testSessionDetailViewUsesPhaseHistoryTimelineSubtitle() {
+        XCTAssertEqual(SessionDetailView.timelineSubtitle, "按时间倒序查看阶段变化、用户操作和回复痕迹。")
     }
 
     private func makeSession(
