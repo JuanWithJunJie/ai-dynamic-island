@@ -14,9 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var statusBarController = StatusBarController(store: store) {
         self.panelCoordinator.togglePanel()
     }
-    private lazy var islandCoordinator = IslandCoordinator(store: store) {
-        self.panelCoordinator.showPanelSelectingTopSession()
+    private lazy var islandCoordinator = IslandCoordinator(store: store) { [weak self] sessionID in
+        self?.panelCoordinator.showPanelSelectingSession(id: sessionID)
     }
+    private lazy var refreshCoordinator = RefreshCoordinator(store: store)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let launchMode = AppLaunchSupport.detectLaunchMode()
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         _ = statusBarController
         _ = islandCoordinator
+        refreshCoordinator.start()
         openPanelIfRequested()
     }
 

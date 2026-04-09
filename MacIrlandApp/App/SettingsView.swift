@@ -12,10 +12,6 @@ struct SettingsView: View {
                 Text("静音").tag(SoundMode.mute)
             }
 
-            Button("刷新状态") {
-                viewModel.refresh()
-            }
-
             Text("当前共有 \(viewModel.sessions.count) 个会话，等待处理 \(viewModel.summary.waitingCount) 个。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)

@@ -203,4 +203,28 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertTrue(source.contains("showPanelSelectingSession(id:"))
     }
+
+    func testAppDelegateOwnsRefreshCoordinatorForAppWidePolling() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("private lazy var refreshCoordinator"))
+    }
+
+    func testRefreshCoordinatorUsesOneSecondInterval() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/RefreshCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("1.0"))
+    }
+
+    func testAppDelegateStartsRefreshCoordinatorAtLaunch() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("refreshCoordinator.start()"))
+    }
+
+    func testSettingsViewNoLongerShowsManualRefreshButton() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/SettingsView.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("刷新状态"))
+    }
 }
