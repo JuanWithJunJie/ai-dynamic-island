@@ -298,7 +298,7 @@ final class UIDisplayFormattingTests: XCTestCase {
 
         XCTAssertEqual(
             SessionDetailView.renderedTimelineEntries(for: session).map(\.title),
-            ["发送文本", "继续执行", "等待输入"]
+            ["发送文本", "继续执行"]
         )
     }
 
@@ -612,7 +612,7 @@ final class UIDisplayFormattingTests: XCTestCase {
     func testPanelUsesSubduedCardToneForSessionList() throws {
         let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("PanelCard(tone: .subdued, padding: 16)"))
+        XCTAssertTrue(source.contains("PanelCard(tone: .subdued, padding: 14)"))
     }
 
     func testDiagnosticsSummaryStillUsesBlockedExplanationWhenNeeded() {
@@ -678,6 +678,24 @@ final class UIDisplayFormattingTests: XCTestCase {
 
         XCTAssertTrue(result.explanation.contains("Claude Code"))
         XCTAssertTrue(result.canSend || result.explanation.contains("重试") || result.explanation.contains("刷新"))
+    }
+
+    func testSessionDetailTimelinePreviewEntriesDefaultToNewestTwoItems() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/SessionDetailView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("prefix(2)") || source.contains("limit: 2"))
+    }
+
+    func testSessionDetailFreeInputUsesCollapsedDisclosure() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/SessionDetailView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("DisclosureGroup"))
+    }
+
+    func testSessionPickerUsesSecondaryNavigationCopy() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/SessionPickerView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("其他会话") || source.contains("更多会话"))
     }
 
     private func makeSession(

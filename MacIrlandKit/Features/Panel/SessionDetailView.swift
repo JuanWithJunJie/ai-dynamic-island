@@ -5,7 +5,7 @@ struct SessionDetailView: View {
     static let quickActionColumns = [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)]
 
     static func renderedTimelineEntries(for session: TaskSession) -> [SessionHistoryEntry] {
-        session.timelinePreviewEntries()
+        Array(session.timelinePreviewEntries().prefix(2))
     }
 
     static func visibleQuickActions(for session: TaskSession) -> [ReplyActionType] {
@@ -15,6 +15,7 @@ struct SessionDetailView: View {
     @Bindable var viewModel: TaskStateStore
     let session: TaskSession
     @Binding var lastActionResult: ReplyValidationResult?
+    @State private var freeInputExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -46,27 +47,34 @@ struct SessionDetailView: View {
             Divider()
                 .overlay(MacIrlandPalette.subtleBorder)
 
-            detailSection("自由输入", subtitle: session.replyCapability.canSendSafely ? nil : session.replyCapability.reason) {
-                TextField("输入要发送给 CLI 的回复", text: $viewModel.draftReply, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(12)
-                    .background(MacIrlandPalette.surfaceMuted, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(MacIrlandPalette.border, lineWidth: 1)
-                    )
+            DisclosureGroup("自由输入", isExpanded: $freeInputExpanded) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !session.replyCapability.canSendSafely {
+                        Text(session.replyCapability.reason)
+                            .font(.caption)
+                            .foregroundStyle(MacIrlandPalette.secondaryText)
+                    }
+                    TextField("输入要发送给 CLI 的回复", text: $viewModel.draftReply, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .padding(12)
+                        .background(MacIrlandPalette.surfaceMuted, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(MacIrlandPalette.border, lineWidth: 1)
+                        )
+                        .disabled(!session.replyCapability.canSendSafely)
+                    Button("发送文本") {
+                        lastActionResult = viewModel.sendDraftReply(for: session)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(IslandAccent.color(for: session.status))
                     .disabled(!session.replyCapability.canSendSafely)
-                Button("发送文本") {
-                    lastActionResult = viewModel.sendDraftReply(for: session)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(IslandAccent.color(for: session.status))
-                .disabled(!session.replyCapability.canSendSafely)
 
-                if let lastActionResult {
-                    Text(lastActionResult.explanation)
-                        .font(.footnote)
-                        .foregroundStyle(lastActionResult.canSend ? .green : .orange)
+                    if let lastActionResult {
+                        Text(lastActionResult.explanation)
+                            .font(.footnote)
+                            .foregroundStyle(lastActionResult.canSend ? .green : .orange)
+                    }
                 }
             }
 

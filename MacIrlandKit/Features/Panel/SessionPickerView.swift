@@ -20,7 +20,7 @@ public struct SessionPickerView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PanelSectionHeader("任务列表", subtitle: "按优先级汇总当前会话，风格参考 activity feed。")
+            PanelSectionHeader("其他会话", subtitle: "同一时期内的其他等待会话。")
 
             if sessions.isEmpty {
                 Text(emptyStateMessage)
