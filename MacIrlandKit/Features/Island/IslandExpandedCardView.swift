@@ -89,5 +89,11 @@ public struct IslandExpandedCardView: View {
             .padding(18)
         }
         .accessibilityLabel(presentation.accessibilityLabel)
+        .transition(
+            .asymmetric(
+                insertion: .opacity.combined(with: .scale(scale: 0.98, anchor: .top)),
+                removal: .opacity.combined(with: .scale(scale: 0.99, anchor: .top))
+            )
+        )
     }
 }

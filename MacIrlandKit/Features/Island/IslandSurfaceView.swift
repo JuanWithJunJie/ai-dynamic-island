@@ -30,17 +30,20 @@ public struct IslandSurfaceView: View {
     }
 
     public var body: some View {
-        switch mode {
-        case .compact:
-            IslandStatusStripView(store: store, action: openPanel)
-        case .highlighted(let presentation):
-            IslandExpandedCardView(
-                presentation: presentation,
-                actionResult: actionResult,
-                openPanel: openPanel,
-                triggerPrimaryAction: triggerPrimaryAction,
-                dismiss: dismissHighlight
-            )
+        Group {
+            switch mode {
+            case .compact:
+                IslandStatusStripView(store: store, action: openPanel)
+            case .highlighted(let presentation):
+                IslandExpandedCardView(
+                    presentation: presentation,
+                    actionResult: actionResult,
+                    openPanel: openPanel,
+                    triggerPrimaryAction: triggerPrimaryAction,
+                    dismiss: dismissHighlight
+                )
+            }
         }
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: mode)
     }
 }

@@ -147,6 +147,19 @@ final class AppLaunchSupportTests: XCTestCase {
         XCTAssertTrue(source.contains("store.performQuickAction"))
     }
 
+    func testIslandSurfaceViewAnimatesModeChanges() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandSurfaceView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains(".animation("))
+        XCTAssertTrue(source.contains("value: mode"))
+    }
+
+    func testIslandExpandedCardUsesTransitionForHighlightedAppearance() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains(".transition("))
+    }
+
     func testIslandExpandedCardDoesNotEmbedTextField() throws {
         let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
 
