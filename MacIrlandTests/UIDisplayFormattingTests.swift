@@ -229,14 +229,225 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertEqual(userActionEntry.detail, "请继续执行。")
     }
 
+    func testTimelinePreviewEntriesDefaultToNewestThreeItems() {
+        let session = makeSession(
+            status: .waitingInput,
+            historyEntries: [
+                makeHistoryEntry(offset: 10, kind: .phaseRunning, title: "运行中"),
+                makeHistoryEntry(offset: 20, kind: .phaseWaitingInput, title: "等待输入"),
+                makeHistoryEntry(offset: 30, kind: .userQuickAction, title: "继续执行"),
+                makeHistoryEntry(offset: 40, kind: .userCustomReply, title: "发送文本")
+            ]
+        )
+
+        XCTAssertEqual(session.timelinePreviewEntries().map(\.title), ["发送文本", "继续执行", "等待输入"])
+    }
+
+    func testCompactSessionSubtitlePrefersActionableGuidanceForWaitingSession() {
+        let session = makeSession(status: .waitingInput)
+
+        XCTAssertEqual(session.compactSessionSubtitle, "等待你确认、补充信息或继续执行。")
+    }
+
+    func testCompactSessionSubtitleFallsBackToSummaryForRunningSession() {
+        let session = makeSession(status: .running)
+
+        XCTAssertEqual(session.compactSessionSubtitle, "Refreshing the panel UI.")
+    }
+
+    func testDiagnosticsSummaryUsesBlockedExplanationWhenObservationFails() {
+        let blocked = CapabilityStatus(
+            accessibilityGranted: true,
+            localOnlyProcessing: true,
+            explanation: "未授权自动化",
+            observationBlocked: true
+        )
+
+        XCTAssertEqual(blocked.panelDiagnosticsSummary, "终端读取失败，展开诊断查看权限或识别问题。")
+        XCTAssertTrue(blocked.showsDiagnosticsExpandedByDefault)
+    }
+
+    func testPanelDiagnosticsSummaryDefaultsToCapabilityExplanationWhenHealthy() {
+        let healthy = CapabilityStatus(
+            accessibilityGranted: true,
+            localOnlyProcessing: true,
+            explanation: "当前使用本地观察链路。",
+            observationBlocked: false
+        )
+
+        XCTAssertEqual(healthy.panelDiagnosticsSummary, "当前使用本地观察链路。")
+        XCTAssertFalse(healthy.showsDiagnosticsExpandedByDefault)
+    }
+
     @MainActor
-    func testSessionDetailViewUsesPhaseHistoryTimelineSubtitle() {
-        XCTAssertEqual(SessionDetailView.timelineSubtitle, "按时间倒序查看阶段变化、用户操作和回复痕迹。")
+    func testSessionDetailTimelineSubtitleDescribesPreviewInsteadOfFullHistory() {
+        XCTAssertEqual(SessionDetailView.timelineSubtitle, "仅显示最近关键阶段。")
+    }
+
+    @MainActor
+    func testSessionDetailViewUsesTimelinePreviewEntriesForRenderedTimeline() {
+        let session = makeSession(
+            status: .waitingInput,
+            historyEntries: [
+                makeHistoryEntry(offset: 10, kind: .phaseRunning, title: "运行中"),
+                makeHistoryEntry(offset: 20, kind: .phaseWaitingInput, title: "等待输入"),
+                makeHistoryEntry(offset: 30, kind: .userQuickAction, title: "继续执行"),
+                makeHistoryEntry(offset: 40, kind: .userCustomReply, title: "发送文本")
+            ]
+        )
+
+        XCTAssertEqual(
+            SessionDetailView.renderedTimelineEntries(for: session).map(\.title),
+            ["发送文本", "继续执行", "等待输入"]
+        )
+    }
+
+    @MainActor
+    func testSessionDetailViewVisibleQuickActionsExcludeCustomText() {
+        let session = makeSession(status: .waitingInput, quickActions: [.continueExecution, .customText, .retry])
+
+        XCTAssertEqual(
+            SessionDetailView.visibleQuickActions(for: session),
+            [.continueExecution, .retry]
+        )
+    }
+
+    func testCompactIslandPresentationUsesIdleStateWhenNoSessionsExist() {
+        let summary = AppTaskSummary(runningCount: 0, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, topSession: nil)
+
+        XCTAssertEqual(presentation.statusText, "空闲")
+        XCTAssertEqual(presentation.countText, "0 个会话")
+    }
+
+    func testCompactIslandPresentationPrefersWaitingStateOverRunning() {
+        let session = makeSession(status: .waitingInput)
+        let summary = AppTaskSummary(runningCount: 1, waitingCount: 1, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+
+        XCTAssertEqual(presentation.statusText, "等待处理")
+        XCTAssertEqual(presentation.countText, "1 个会话")
+    }
+
+    func testCompactIslandPresentationUsesRunningStateForActiveWork() {
+        let session = makeSession(status: .running)
+        let summary = AppTaskSummary(runningCount: 2, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+
+        XCTAssertEqual(presentation.statusText, "运行中")
+        XCTAssertEqual(presentation.countText, "2 个会话")
+    }
+
+    @MainActor
+    func testCompactIslandPresentationAccessibilityLabelIncludesStatusAndCount() {
+        let session = makeSession(status: .running)
+        let summary = AppTaskSummary(runningCount: 1, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+
+        XCTAssertEqual(presentation.accessibilityLabel, "MacIrland，运行中，1 个会话")
+    }
+
+    @MainActor
+    func testCompactIslandPresentationUsesAttentionAccentForWaitingSession() {
+        let session = makeSession(status: .waitingInput)
+        let summary = AppTaskSummary(runningCount: 0, waitingCount: 1, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+
+        XCTAssertEqual(presentation.statusText, "等待处理")
+        XCTAssertEqual(presentation.accentColor, IslandAccent.color(for: .waitingInput))
+    }
+
+    func testHighlightedIslandPresentationUsesWaitingSessionCopy() {
+        let session = makeSession(status: .waitingInput)
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(presentation?.titleText, "UI refresh")
+        XCTAssertEqual(presentation?.summaryText, "等待你确认、补充信息或继续执行。")
+        XCTAssertEqual(presentation?.sourceText, "Claude Code")
+    }
+
+    func testHighlightedIslandPresentationReturnsNilForNonAttentionSession() {
+        let session = makeSession(status: .running)
+
+        XCTAssertNil(HighlightedIslandPresentation(topSession: session))
+    }
+
+    func testHighlightedIslandPresentationUsesRelativeLastActiveTime() {
+        let session = makeSession(status: .failed)
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(presentation?.timeText, session.relativeLastActiveText)
+    }
+
+    @MainActor
+    func testHighlightedIslandPresentationAccessibilityLabelIncludesSource() {
+        let session = makeSession(status: .alert)
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(
+            presentation?.accessibilityLabel,
+            "MacIrland，UI refresh，Refreshing the panel UI.，来自 Claude Code"
+        )
+    }
+
+    @MainActor
+    func testHighlightedIslandPresentationUsesStatusAccentColor() {
+        let session = makeSession(status: .failed)
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(presentation?.accentColor, IslandAccent.color(for: .failed))
+    }
+
+    func testHighlightedIslandPresentationPicksFirstVisibleQuickAction() {
+        let session = makeSession(
+            status: .waitingInput,
+            quickActions: [.continueExecution, .retry, .customText]
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(presentation?.primaryAction, .continueExecution)
+        XCTAssertEqual(presentation?.primaryActionTitle, "继续执行")
+    }
+
+    func testHighlightedIslandPresentationSkipsCustomTextWhenChoosingPrimaryAction() {
+        let session = makeSession(
+            status: .replyAvailable,
+            quickActions: [.customText, .explainReason]
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(presentation?.primaryAction, .explainReason)
+        XCTAssertEqual(presentation?.primaryActionTitle, "解释原因")
+    }
+
+    func testHighlightedIslandPresentationHasNoPrimaryActionWhenNoVisibleQuickActionsExist() {
+        let session = makeSession(
+            status: .failed,
+            quickActions: [.customText]
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertNil(presentation?.primaryAction)
+        XCTAssertNil(presentation?.primaryActionTitle)
     }
 
     private func makeSession(
         status: TaskStatus = .running,
-        terminalAppIdentifier: String = "com.apple.Terminal"
+        terminalAppIdentifier: String = "com.apple.Terminal",
+        historyEntries: [SessionHistoryEntry] = [],
+        quickActions: [ReplyActionType] = [.continueExecution]
     ) -> TaskSession {
         TaskSession(
             identity: SessionIdentity(
@@ -263,7 +474,18 @@ final class UIDisplayFormattingTests: XCTestCase {
             evidence: [],
             recentEvents: [],
             recentMessages: [],
-            quickActions: [.continueExecution]
+            historyEntries: historyEntries,
+            quickActions: quickActions
+        )
+    }
+
+    private func makeHistoryEntry(offset: TimeInterval, kind: SessionHistoryKind, title: String) -> SessionHistoryEntry {
+        SessionHistoryEntry(
+            timestamp: Date(timeIntervalSince1970: offset),
+            kind: kind,
+            title: title,
+            detail: title,
+            relatedStatus: .waitingInput
         )
     }
 }
