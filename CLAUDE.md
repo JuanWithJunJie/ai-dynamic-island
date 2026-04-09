@@ -42,13 +42,13 @@
 - panel 已进一步退为 island 的二级详情层：打开时默认聚焦当前顶层会话，header 更安静，session 列表和 diagnostics 都进一步降权
 - 当前 menu bar 与 Dock 仍然保留，作为 island 之外的保底入口
 - 真实 observation 当前仍只覆盖 Claude Code；Codex / Gemini 仍主要依赖 mock
-- Reply bridge 仍是 mock，不是真实回写 CLI
+- Reply bridge 已就绪：支持 Claude Code + Terminal/iTerm 的真实 AppleScript 回写路径，UI 层已与 bridge 状态对齐（island quick action / panel quick action / panel 自由输入均受同一套验证逻辑管控）
 - 当前 `swift test` 和 `swift build` 已通过
 
 ## 当前限制
 - 真实状态识别仍主要基于终端 transcript 启发式；虽然已改成多信号判定，但复杂长文本场景下仍可能误判
 - 如果系统未授权 Apple Events / 自动化权限，真实 observation 结果会为空
-- Reply bridge 还是 mock，不是真实回写 CLI
+- Reply bridge 已支持 Claude Code + Terminal/iTerm 真实回写；Codex / Gemini 仍不支持真实回写
 - 每个 session 现在都有各自独立的 reply 草稿缓存，但仍只保存在当前 app 运行期内，重启后不会保留
 - 本地运行菜单栏体验当前依赖新加的 dev app 启动脚本，不是完整发行形态
 - 目前对“错误启动方式”的处理是弹窗提示并退出，不会尝试兼容裸可执行文件直跑
@@ -183,3 +183,38 @@
 - 结果 4：点击 expanded card 内容区会打开主 panel，并清除 dismissed 记忆以便下次正常响应。
 - 结果 5：expanded card 右上角保留声音和设置图标，与内容层保持分离。
 - 结果 6：相关逻辑已有单元测试覆盖；验证命令为 `swift test --filter UIDisplayFormattingTests`、`swift test --filter AppLaunchSupportTests`、`swift test`、`swift build` 全部通过。
+
+## 本次修改（2026-04-10 Phase 6）
+- 修改 1：更新 `MacIrlandKit/Core/Models/TaskModels.swift`，新增 `TaskStatus.tier(for:)` 静态方法，实现 attention tier 映射：Tier 4（.waitingInput / .failed / .contextLost）、Tier 3（.alert）、Tier 2（.replyAvailable）、Tier 1（.running）、Tier 0（.completed）。
+- 修改 2：更新 `MacIrlandKit/Core/State/TaskStateStore.swift`，新增 `preferredIslandSession` 计算属性，基于 attention tier + priority + lastActiveAt 排序，返回 island 视角下最值得关注会话，与 `topSession` 分离。
+- 修改 3：更新 `MacIrlandKit/Features/Island/IslandPresentation.swift`，`CompactIslandPresentation` 改用 `preferredSession` 参数，状态词改为 focus-driven copy：`.waitingInput` → “等待回复”、`.failed/.contextLost` → “需要处理”、`.alert` → “发现异常”、`.replyAvailable` → “可直接回复”、`.running` → “运行中”、`.completed` → “已完成”。
+- 修改 4：更新 `MacIrlandKit/Features/Island/IslandStatusStripView.swift`，compact island 现使用 `store.preferredIslandSession` 而非 `store.topSession`。
+- 修改 5：更新 `MacIrlandApp/App/IslandCoordinator.swift`，新增 `activeHighlightedSessionID` 状态追踪、新增 `arbitrationTarget()` 方法实现 sticky arbitration：当前高亮会话保留直到出现更高 tier 候选；`recomputeMode()` 和 `triggerPrimaryAction()` 均改为使用 arbitration 结果；`openPanel()` 改为传递 island 焦点 session。
+- 修改 6：更新 `MacIrlandApp/App/PanelCoordinator.swift`，新增 `showPanelSelectingSession(id:)` 方法，支持按 session ID 精确聚焦。
+- 修改 7：更新 `MacIrlandApp/App/AppDelegate.swift`，island 点击回调改为闭包 `(TaskSession.ID?) -> Void`，将当前 island 焦点 session ID 传递给 panel。
+- 修改 8：更新 `MacIrlandTests/TaskStateStoreTests.swift`，新增 `testPreferredIslandSessionPicksHighestTierAttentionSession`、`testPreferredIslandSessionTierOrdering`、`testPreferredIslandSessionReturnsNilWhenNoSessions`。
+- 修改 9：更新 `MacIrlandTests/UIDisplayFormattingTests.swift`，新增 `testCompactIslandPresentationUsesWaitingReplyCopyForWaitingSession`、`testCompactIslandPresentationUsesNeedsHandlingCopyForFailedSession`、`testCompactIslandPresentationUsesAlertCopyForAlertSession`、`testCompactIslandPresentationUsesDirectReplyCopyForReplyAvailableSession`，并更新现有测试以匹配新的参数名和状态词。
+- 修改 10：更新 `MacIrlandTests/AppLaunchSupportTests.swift`，更新 `testAppDelegateRoutesIslandTapToShowPanel` 和 `testAppDelegateRoutesIslandOpenThroughFocusedPanelPath` 以匹配新的 panel handoff API。
+
+## 本次结果（2026-04-10 Phase 6）
+- 结果 1：island 现在拥有独立的 session 排序逻辑（`preferredIslandSession`），与 panel 用的 `topSession` 分离，排序规则由 attention tier 驱动。
+- 结果 2：compact island 状态词由 island 焦点驱动，不再是纯计数驱动：`.waitingInput` → “等待回复”、`.failed/.contextLost` → “需要处理”、`.alert` → “发现异常”、`.replyAvailable` → “可直接回复”。
+- 结果 3：expanded island 具备 sticky arbitration：当前高亮会话只在出现更高 tier 候选时切换，同 tier 会话不会抖动；被 dismiss 的会话不会立刻重新展开，但更高 tier 新会话仍可抢占。
+- 结果 4：island → panel handoff 与 island 焦点对齐：highlighted 模式使用 `activeHighlightedSessionID`，compact 模式使用 `preferredIslandSession`（fallback 到 `topSession`）。
+- 结果 5：相关逻辑已有单元测试覆盖；验证命令为 `swift test`、`swift build` 全部通过（133 tests）。
+
+## 本次修改（2026-04-10 Phase 7）
+- 修改 1：更新 `MacIrlandKit/Core/State/TaskStateStore.swift`，新增 `islandAttentionSessions` 计算属性（返回按 tier 排序的 attention session 队列）和 `secondaryIslandAttentionCount(excluding:)` 方法。
+- 修改 2：更新 `MacIrlandApp/App/IslandCoordinator.swift`，`arbitrationTarget()` 改为基于 `islandAttentionSessions` 过滤 dismissed 会话后选择；`dismissHighlight()` 和 auto-collapse 时清除 `activeHighlightedSessionID` 以便自然切到下一个 queue 项；`recomputeMode()` 传递 `queueCount` 给 `HighlightedIslandPresentation`。
+- 修改 3：更新 `MacIrlandKit/Features/Island/IslandPresentation.swift`，`CompactIslandPresentation` 新增 `secondaryText` 字段（当有额外 attention session 时显示”另 X 个待处理”）；`HighlightedIslandPresentation` 新增 `queueHintText` 字段（显示”后面还有 X 个会话待处理”）。
+- 修改 4：更新 `MacIrlandKit/Features/Island/IslandStatusStripView.swift`，传入 `secondaryCount` 并在 compact 态显示 `secondaryText`。
+- 修改 5：更新 `MacIrlandKit/Features/Island/IslandExpandedCardView.swift`，在底部动作行显示 `queueHintText`。
+- 修改 6：更新 `MacIrlandTests/TaskStateStoreTests.swift`，新增 `testIslandAttentionSessionsReturnsOnlyAttentionSessions`、`testIslandAttentionSessionsFiltersNonAttentionSessions`、`testSecondaryIslandAttentionCountExcludesCurrentFocus`、`testSecondaryIslandAttentionCountReturnsZeroWhenNoAttentionSessions`。
+- 修改 7：更新 `MacIrlandTests/UIDisplayFormattingTests.swift`，更新 `CompactIslandPresentation` 调用以匹配新参数；新增 `secondaryText` 相关测试覆盖。
+
+## 本次结果（2026-04-10 Phase 7）
+- 结果 1：island 现具备 attention queue 意识，`islandAttentionSessions` 返回按 tier 排序的 attention session 列表，`secondaryIslandAttentionCount` 提供当前队列剩余计数。
+- 结果 2：dismiss 或 auto-collapse 后，island 会自然切到下一个 attention session，而不是直接回 compact（当队列未空时）。
+- 结果 3：compact island 在有额外待处理 session 时显示”另 X 个待处理”。
+- 结果 4：expanded card 在有额外待处理 session 时显示”后面还有 X 个会话待处理”。
+- 结果 5：相关逻辑已有单元测试覆盖；验证命令为 `swift test`、`swift build` 全部通过（137 tests）。
