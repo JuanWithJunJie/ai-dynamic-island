@@ -11,6 +11,7 @@ final class IslandCoordinator {
     private var mode: IslandSurfaceMode = .compact
     private var dismissedHighlightedSessionID: TaskSession.ID?
     private var actionResult: ReplyValidationResult?
+    private var autoCollapseWorkItem: DispatchWorkItem?
 
     init(store: TaskStateStore, action: @escaping () -> Void) {
         self.store = store
@@ -58,9 +59,11 @@ final class IslandCoordinator {
            let highlighted = HighlightedIslandPresentation(topSession: topSession) {
             mode = .highlighted(highlighted)
             window.setContentSize(CGSize(width: 860, height: 152))
+            scheduleAutoCollapseIfNeeded(for: highlighted)
         } else {
             mode = .compact
             window.setContentSize(CGSize(width: 520, height: 44))
+            cancelAutoCollapse()
         }
 
         window.contentView = NSHostingView(
@@ -76,7 +79,31 @@ final class IslandCoordinator {
         layoutWindow()
     }
 
+    private func cancelAutoCollapse() {
+        autoCollapseWorkItem?.cancel()
+        autoCollapseWorkItem = nil
+    }
+
+    private func scheduleAutoCollapseIfNeeded(for presentation: HighlightedIslandPresentation) {
+        cancelAutoCollapse()
+
+        guard let delay = presentation.autoCollapseDelay else {
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.dismissedHighlightedSessionID = presentation.sessionID
+            self.actionResult = nil
+            self.recomputeMode()
+        }
+
+        autoCollapseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
     private func dismissHighlight() {
+        cancelAutoCollapse()
         actionResult = nil
         if case let .highlighted(presentation) = mode {
             dismissedHighlightedSessionID = presentation.sessionID
@@ -85,6 +112,7 @@ final class IslandCoordinator {
     }
 
     private func triggerPrimaryAction() {
+        cancelAutoCollapse()
         guard case let .highlighted(presentation) = mode,
               let topSession = store.topSession,
               topSession.id == presentation.sessionID,
@@ -97,6 +125,7 @@ final class IslandCoordinator {
     }
 
     private func openPanel() {
+        cancelAutoCollapse()
         action()
         dismissedHighlightedSessionID = nil
         recomputeMode()

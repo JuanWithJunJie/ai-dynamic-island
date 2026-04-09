@@ -171,4 +171,24 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertFalse(source.contains("ForEach("))
     }
+
+    func testIslandCoordinatorStoresAutoCollapseWorkItem() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("private var autoCollapseWorkItem"))
+    }
+
+    func testIslandCoordinatorSchedulesAutoCollapseFromPresentationDelay() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("presentation.autoCollapseDelay"))
+        XCTAssertTrue(source.contains("DispatchWorkItem"))
+        XCTAssertTrue(source.contains("DispatchQueue.main.asyncAfter"))
+    }
+
+    func testIslandCoordinatorCancelsAutoCollapseOnDismissAndOpenPanel() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("autoCollapseWorkItem?.cancel()"))
+    }
 }
