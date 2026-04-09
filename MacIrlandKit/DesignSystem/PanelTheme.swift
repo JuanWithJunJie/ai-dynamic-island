@@ -6,10 +6,18 @@ public enum MacIrlandPalette {
     public static let surface = Color(red: 0.07, green: 0.08, blue: 0.11)
     public static let surfaceElevated = Color(red: 0.10, green: 0.11, blue: 0.15)
     public static let surfaceMuted = Color(red: 0.12, green: 0.13, blue: 0.17)
+    public static let islandSurface = Color.black.opacity(0.94)
     public static let border = Color.white.opacity(0.08)
     public static let subtleBorder = Color.white.opacity(0.05)
     public static let secondaryText = Color.white.opacity(0.68)
     public static let tertiaryText = Color.white.opacity(0.48)
+}
+
+public extension MacIrlandPalette {
+    static let islandChrome = Color.white.opacity(0.8)
+    static let islandSubtleBorder = Color.white.opacity(0.06)
+    static let islandSuccess = Color.green.opacity(0.92)
+    static let islandWarning = Color.orange.opacity(0.92)
 }
 
 public enum PanelCardTone {

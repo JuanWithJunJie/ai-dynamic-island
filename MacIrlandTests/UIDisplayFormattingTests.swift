@@ -443,6 +443,30 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertNil(presentation?.primaryActionTitle)
     }
 
+    func testHighlightedIslandPresentationKeepsPrimaryActionForWaitingSession() {
+        let session = makeSession(
+            status: .waitingInput,
+            quickActions: [.retry, .continueExecution]
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertEqual(presentation?.primaryAction, .retry)
+        XCTAssertEqual(presentation?.primaryActionTitle, "重试")
+    }
+
+    func testHighlightedIslandPresentationCanRenderWithoutPrimaryAction() {
+        let session = makeSession(
+            status: .alert,
+            quickActions: [.customText]
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertNotNil(presentation)
+        XCTAssertNil(presentation?.primaryActionTitle)
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
