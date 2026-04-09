@@ -1,7 +1,16 @@
 import SwiftUI
 
 struct SessionDetailView: View {
-    static let timelineSubtitle = "按时间倒序查看阶段变化、用户操作和回复痕迹。"
+    static let timelineSubtitle = "仅显示最近关键阶段。"
+    static let quickActionColumns = [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)]
+
+    static func renderedTimelineEntries(for session: TaskSession) -> [SessionHistoryEntry] {
+        session.timelinePreviewEntries()
+    }
+
+    static func visibleQuickActions(for session: TaskSession) -> [ReplyActionType] {
+        session.quickActions.filter { $0 != .customText }
+    }
 
     @Bindable var viewModel: TaskStateStore
     let session: TaskSession
@@ -9,14 +18,65 @@ struct SessionDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PanelSectionHeader("当前任务", subtitle: "把任务摘要、最新消息和回复入口分成更清晰的工作区。")
+            PanelSectionHeader("当前任务", subtitle: "优先处理等待你介入的步骤。")
 
             taskSummarySection
 
-            if !session.timelineEntries.isEmpty {
-                detailSection("活动时间线", subtitle: Self.timelineSubtitle) {
+            detailSection("快捷回复") {
+                if session.replyCapability.canSendSafely {
+                    LazyVGrid(columns: Self.quickActionColumns, alignment: .leading, spacing: 8) {
+                        ForEach(visibleQuickActions, id: \.self) { action in
+                            Button(action.title) {
+                                viewModel.draftReply = action.defaultMessage
+                                lastActionResult = viewModel.performQuickAction(action, for: session)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(IslandAccent.color(for: session.status))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } else {
+                    Text(session.replyCapability.reason)
+                        .font(.caption)
+                        .foregroundStyle(MacIrlandPalette.secondaryText)
+                        .lineLimit(2)
+                }
+            }
+
+            Divider()
+                .overlay(MacIrlandPalette.subtleBorder)
+
+            detailSection("自由输入", subtitle: session.replyCapability.canSendSafely ? nil : session.replyCapability.reason) {
+                TextField("输入要发送给 CLI 的回复", text: $viewModel.draftReply, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .padding(12)
+                    .background(MacIrlandPalette.surfaceMuted, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(MacIrlandPalette.border, lineWidth: 1)
+                    )
+                    .disabled(!session.replyCapability.canSendSafely)
+                Button("发送文本") {
+                    lastActionResult = viewModel.sendDraftReply(for: session)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(IslandAccent.color(for: session.status))
+                .disabled(!session.replyCapability.canSendSafely)
+
+                if let lastActionResult {
+                    Text(lastActionResult.explanation)
+                        .font(.footnote)
+                        .foregroundStyle(lastActionResult.canSend ? .green : .orange)
+                }
+            }
+
+            if !renderedTimelineEntries.isEmpty {
+                Divider()
+                    .overlay(MacIrlandPalette.subtleBorder)
+
+                detailSection("最近关键阶段", subtitle: Self.timelineSubtitle) {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(session.timelineEntries) { entry in
+                        ForEach(renderedTimelineEntries) { entry in
                             TimelineRow(
                                 systemImage: entry.systemImage,
                                 tint: entry.tint,
@@ -28,52 +88,15 @@ struct SessionDetailView: View {
                     }
                 }
             }
-
-            Divider()
-                .overlay(MacIrlandPalette.subtleBorder)
-
-            detailSection("快捷回复") {
-                FlowLayout(spacing: 8) {
-                    ForEach(session.quickActions, id: \.self) { action in
-                        Button(action.title) {
-                            if action == .customText {
-                                lastActionResult = viewModel.sendDraftReply(for: session)
-                            } else {
-                                viewModel.draftReply = action.defaultMessage
-                                lastActionResult = viewModel.performQuickAction(action, for: session)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(IslandAccent.color(for: session.status))
-                    }
-                }
-            }
-
-            Divider()
-                .overlay(MacIrlandPalette.subtleBorder)
-
-            detailSection("自由输入", subtitle: session.replyCapability.reason) {
-                TextField("输入要发送给 CLI 的回复", text: $viewModel.draftReply, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(12)
-                    .background(MacIrlandPalette.surfaceMuted, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(MacIrlandPalette.border, lineWidth: 1)
-                    )
-                Button("发送文本") {
-                    lastActionResult = viewModel.sendDraftReply(for: session)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(IslandAccent.color(for: session.status))
-
-                if let lastActionResult {
-                    Text(lastActionResult.explanation)
-                        .font(.footnote)
-                        .foregroundStyle(lastActionResult.canSend ? .green : .orange)
-                }
-            }
         }
+    }
+
+    private var renderedTimelineEntries: [SessionHistoryEntry] {
+        Self.renderedTimelineEntries(for: session)
+    }
+
+    private var visibleQuickActions: [ReplyActionType] {
+        Self.visibleQuickActions(for: session)
     }
 
     private var taskSummarySection: some View {
@@ -98,12 +121,10 @@ struct SessionDetailView: View {
                 .background(IslandAccent.color(for: session.status).opacity(0.16), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             HStack(spacing: 8) {
-                MetaChip(session.sourceCLI.displayName, systemImage: "cpu")
-                MetaChip(session.terminalDisplayName, systemImage: "terminal")
+                MetaChip(session.status.label, systemImage: "waveform.path.ecg")
                 MetaChip(session.relativeLastActiveText, systemImage: "clock")
-
-                if let target = session.bridgeTarget {
-                    MetaChip(target.displayName, systemImage: "paperplane")
+                if session.isAwaitingUser {
+                    MetaChip("等待处理", systemImage: "hand.raised.fill", tint: .orange)
                 }
             }
         }
@@ -181,13 +202,4 @@ private struct DetailSection<Content: View>: View {
 @MainActor
 private func detailSection<Content: View>(_ title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) -> some View {
     DetailSection(title, subtitle: subtitle, content: content)
-}
-
-private struct FlowLayout<Content: View>: View {
-    let spacing: CGFloat
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-    }
 }

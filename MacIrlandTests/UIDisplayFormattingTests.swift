@@ -315,27 +315,27 @@ final class UIDisplayFormattingTests: XCTestCase {
     func testCompactIslandPresentationUsesIdleStateWhenNoSessionsExist() {
         let summary = AppTaskSummary(runningCount: 0, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
 
-        let presentation = CompactIslandPresentation(summary: summary, topSession: nil)
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: nil, secondaryCount: 0)
 
         XCTAssertEqual(presentation.statusText, "空闲")
         XCTAssertEqual(presentation.countText, "0 个会话")
     }
 
-    func testCompactIslandPresentationPrefersWaitingStateOverRunning() {
+    func testCompactIslandPresentationUsesWaitingReplyCopyForWaitingSession() {
         let session = makeSession(status: .waitingInput)
         let summary = AppTaskSummary(runningCount: 1, waitingCount: 1, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
 
-        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
 
-        XCTAssertEqual(presentation.statusText, "等待处理")
-        XCTAssertEqual(presentation.countText, "1 个会话")
+        XCTAssertEqual(presentation.statusText, "等待回复")
+        XCTAssertEqual(presentation.countText, "2 个会话")
     }
 
     func testCompactIslandPresentationUsesRunningStateForActiveWork() {
         let session = makeSession(status: .running)
         let summary = AppTaskSummary(runningCount: 2, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
 
-        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
 
         XCTAssertEqual(presentation.statusText, "运行中")
         XCTAssertEqual(presentation.countText, "2 个会话")
@@ -346,20 +346,50 @@ final class UIDisplayFormattingTests: XCTestCase {
         let session = makeSession(status: .running)
         let summary = AppTaskSummary(runningCount: 1, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
 
-        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
 
         XCTAssertEqual(presentation.accessibilityLabel, "MacIrland，运行中，1 个会话")
     }
 
     @MainActor
-    func testCompactIslandPresentationUsesAttentionAccentForWaitingSession() {
+    func testCompactIslandPresentationUsesWaitingReplyAccentForWaitingSession() {
         let session = makeSession(status: .waitingInput)
         let summary = AppTaskSummary(runningCount: 0, waitingCount: 1, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
 
-        let presentation = CompactIslandPresentation(summary: summary, topSession: session)
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
 
-        XCTAssertEqual(presentation.statusText, "等待处理")
+        XCTAssertEqual(presentation.statusText, "等待回复")
         XCTAssertEqual(presentation.accentColor, IslandAccent.color(for: .waitingInput))
+    }
+
+    @MainActor
+    func testCompactIslandPresentationUsesNeedsHandlingCopyForFailedSession() {
+        let session = makeSession(status: .failed)
+        let summary = AppTaskSummary(runningCount: 0, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
+
+        XCTAssertEqual(presentation.statusText, "需要处理")
+    }
+
+    @MainActor
+    func testCompactIslandPresentationUsesAlertCopyForAlertSession() {
+        let session = makeSession(status: .alert)
+        let summary = AppTaskSummary(runningCount: 0, waitingCount: 0, completedCount: 0, alertCount: 1, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
+
+        XCTAssertEqual(presentation.statusText, "发现异常")
+    }
+
+    @MainActor
+    func testCompactIslandPresentationUsesDirectReplyCopyForReplyAvailableSession() {
+        let session = makeSession(status: .replyAvailable)
+        let summary = AppTaskSummary(runningCount: 0, waitingCount: 0, completedCount: 0, alertCount: 0, topPrioritySessionID: nil)
+
+        let presentation = CompactIslandPresentation(summary: summary, preferredSession: session, secondaryCount: 0)
+
+        XCTAssertEqual(presentation.statusText, "可直接回复")
     }
 
     func testHighlightedIslandPresentationUsesWaitingSessionCopy() {
@@ -441,6 +471,40 @@ final class UIDisplayFormattingTests: XCTestCase {
 
         XCTAssertNil(presentation?.primaryAction)
         XCTAssertNil(presentation?.primaryActionTitle)
+    }
+
+    func testHighlightedIslandPresentationPrimaryActionAvailableWhenBridgeReady() {
+        let session = makeSession(
+            status: .waitingInput,
+            quickActions: [.continueExecution],
+            bridgeTarget: BridgeTarget(
+                cliKind: .claudeCode,
+                sessionID: UUID(),
+                terminalContext: "Claude Code · ui",
+                channelType: "applescript-terminal",
+                displayName: "Claude Code"
+            )
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertTrue(presentation?.primaryActionAvailable ?? false)
+        XCTAssertNil(presentation?.primaryActionUnavailableReason)
+    }
+
+    func testHighlightedIslandPresentationPrimaryActionUnavailableWhenBridgeUnavailable() {
+        let session = makeSession(
+            status: .waitingInput,
+            quickActions: [.continueExecution],
+            bridgeTarget: nil,
+            replyCapabilityStatus: .unavailable,
+            replyCapabilityReason: "终端自动化权限未授权，请检查系统设置。"
+        )
+
+        let presentation = HighlightedIslandPresentation(topSession: session)
+
+        XCTAssertFalse(presentation?.primaryActionAvailable ?? true)
+        XCTAssertEqual(presentation?.primaryActionUnavailableReason, "终端自动化权限未授权，请检查系统设置。")
     }
 
     func testHighlightedIslandPresentationKeepsPrimaryActionForWaitingSession() {
@@ -573,7 +637,10 @@ final class UIDisplayFormattingTests: XCTestCase {
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
         historyEntries: [SessionHistoryEntry] = [],
-        quickActions: [ReplyActionType] = [.continueExecution]
+        quickActions: [ReplyActionType] = [.continueExecution],
+        bridgeTarget: BridgeTarget? = nil,
+        replyCapabilityStatus: ReplyCapabilityStatus = .available,
+        replyCapabilityReason: String = "Ready"
     ) -> TaskSession {
         TaskSession(
             identity: SessionIdentity(
@@ -589,10 +656,10 @@ final class UIDisplayFormattingTests: XCTestCase {
             priority: 1,
             confidence: 0.92,
             summary: "Refreshing the panel UI.",
-            bridgeTarget: nil,
+            bridgeTarget: bridgeTarget,
             replyCapability: ReplyCapability(
-                status: .available,
-                reason: "Ready",
+                status: replyCapabilityStatus,
+                reason: replyCapabilityReason,
                 targetDescription: "Claude Code",
                 channelStatus: "mock"
             ),

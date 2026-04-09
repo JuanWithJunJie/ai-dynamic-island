@@ -52,16 +52,28 @@ public struct IslandExpandedCardView: View {
                     }
 
                     HStack(spacing: 12) {
-                        if let actionTitle = presentation.primaryActionTitle {
+                        if presentation.primaryActionAvailable, let actionTitle = presentation.primaryActionTitle {
                             Button(actionTitle, action: triggerPrimaryAction)
                                 .buttonStyle(.borderedProminent)
                                 .tint(presentation.accentColor)
+                        } else if let reason = presentation.primaryActionUnavailableReason {
+                            Text(reason)
+                                .font(.caption)
+                                .foregroundStyle(MacIrlandPalette.secondaryText)
+                                .lineLimit(1)
                         }
 
                         if let actionResult {
                             Text(actionResult.explanation)
                                 .font(.caption)
                                 .foregroundStyle(actionResult.canSend ? MacIrlandPalette.islandSuccess : MacIrlandPalette.islandWarning)
+                                .lineLimit(1)
+                        }
+
+                        if let queueHint = presentation.queueHintText {
+                            Text(queueHint)
+                                .font(.caption)
+                                .foregroundStyle(MacIrlandPalette.secondaryText)
                                 .lineLimit(1)
                         }
                     }

@@ -886,6 +886,166 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedSession?.historyEntries.last?.kind, .userQuickAction)
     }
 
+    func testPreferredIslandSessionPicksHighestTierAttentionSession() {
+        let service = RealTerminalObservationService(
+            terminalReaders: [
+                StubTerminalReader(result: .success(observations: [
+                    ObservedTerminalSession(
+                        snapshot: TerminalObservationSnapshot(
+                            terminalAppIdentifier: "com.apple.Terminal",
+                            windowTitle: "Claude Code · alert",
+                            commandLine: "claude",
+                            ttyIdentifier: "ttys050"
+                        ),
+                        transcript: "Warning: network unstable, retrying request."
+                    ),
+                    ObservedTerminalSession(
+                        snapshot: TerminalObservationSnapshot(
+                            terminalAppIdentifier: "com.apple.Terminal",
+                            windowTitle: "Claude Code · waiting",
+                            commandLine: "claude",
+                            ttyIdentifier: "ttys051"
+                        ),
+                        transcript: "Please confirm to continue."
+                    )
+                ]))
+            ]
+        )
+
+        let store = TaskStateStore(observationService: service)
+
+        XCTAssertEqual(store.preferredIslandSession?.status, .waitingInput)
+    }
+
+    func testPreferredIslandSessionTierOrdering() {
+        let waitingEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Waiting for input.",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "waiting",
+                commandLine: "claude",
+                ttyIdentifier: "ttys060"
+            )
+        )
+        let alertEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Warning: something went wrong.",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "alert",
+                commandLine: "claude",
+                ttyIdentifier: "ttys061"
+            )
+        )
+        let replyEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Please confirm to continue.",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "reply",
+                commandLine: "claude",
+                ttyIdentifier: "ttys062"
+            )
+        )
+
+        // waiting (Tier 4) > alert (Tier 3)
+        XCTAssertEqual(TaskStatus.tier(for: .waitingInput), 4)
+        XCTAssertEqual(TaskStatus.tier(for: .alert), 3)
+        XCTAssertGreaterThan(TaskStatus.tier(for: .waitingInput), TaskStatus.tier(for: .alert))
+
+        // alert (Tier 3) > replyAvailable (Tier 2)
+        XCTAssertEqual(TaskStatus.tier(for: .replyAvailable), 2)
+        XCTAssertGreaterThan(TaskStatus.tier(for: .alert), TaskStatus.tier(for: .replyAvailable))
+    }
+
+    func testPreferredIslandSessionReturnsNilWhenNoSessions() {
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        XCTAssertNil(store.preferredIslandSession)
+    }
+
+    func testIslandAttentionSessionsReturnsOnlyAttentionSessions() {
+        let service = StubObservationService(events: [], diagnostics: .empty)
+        let store = TaskStateStore(observationService: service)
+
+        XCTAssertEqual(store.islandAttentionSessions.count, 0)
+    }
+
+    func testIslandAttentionSessionsFiltersNonAttentionSessions() {
+        let waitingEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Waiting for input.",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · waiting",
+                commandLine: "claude",
+                ttyIdentifier: "ttys070"
+            )
+        )
+        let runningEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Processing...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · running",
+                commandLine: "claude",
+                ttyIdentifier: "ttys071"
+            )
+        )
+        let service = StubObservationService(events: [waitingEvent, runningEvent], diagnostics: .empty)
+        let store = TaskStateStore(observationService: service)
+
+        let attentionSessions = store.islandAttentionSessions
+        XCTAssertEqual(attentionSessions.count, 1)
+        XCTAssertEqual(attentionSessions.first?.status, .waitingInput)
+    }
+
+    func testSecondaryIslandAttentionCountExcludesCurrentFocus() {
+        let waitingEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Waiting for input.",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · waiting",
+                commandLine: "claude",
+                ttyIdentifier: "ttys080"
+            )
+        )
+        let runningEvent = RawCLIEvent(
+            cliKind: .codex,
+            snippet: "Running code...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "codex task",
+                commandLine: "codex",
+                ttyIdentifier: "ttys081"
+            )
+        )
+        let service = StubObservationService(events: [waitingEvent, runningEvent], diagnostics: .empty)
+        let store = TaskStateStore(observationService: service)
+
+        let attentionSessions = store.islandAttentionSessions
+        XCTAssertEqual(attentionSessions.count, 1)
+
+        let focusSession = store.preferredIslandSession
+        XCTAssertNotNil(focusSession)
+
+        let secondaryCount = store.secondaryIslandAttentionCount(excluding: focusSession?.id)
+        XCTAssertEqual(secondaryCount, 0)
+    }
+
+    func testSecondaryIslandAttentionCountReturnsZeroWhenNoAttentionSessions() {
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        let count = store.secondaryIslandAttentionCount(excluding: nil)
+        XCTAssertEqual(count, 0)
+    }
+
     private var prioritizedEvents: [RawCLIEvent] {
         [
             RawCLIEvent(

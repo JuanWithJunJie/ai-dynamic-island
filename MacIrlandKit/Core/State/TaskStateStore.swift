@@ -73,6 +73,43 @@ public final class TaskStateStore {
         sessions.first
     }
 
+    public var preferredIslandSession: TaskSession? {
+        sessions.max { a, b in
+            let tierA = TaskStatus.tier(for: a.status)
+            let tierB = TaskStatus.tier(for: b.status)
+            if tierA != tierB {
+                return tierA < tierB
+            }
+            if a.priority != b.priority {
+                return a.priority < b.priority
+            }
+            return a.lastActiveAt < b.lastActiveAt
+        }
+    }
+
+    public var islandAttentionSessions: [TaskSession] {
+        sessions
+            .filter { $0.status.needsAttention }
+            .sorted { a, b in
+                let tierA = TaskStatus.tier(for: a.status)
+                let tierB = TaskStatus.tier(for: b.status)
+                if tierA != tierB {
+                    return tierA > tierB
+                }
+                if a.priority != b.priority {
+                    return a.priority > b.priority
+                }
+                return a.lastActiveAt > b.lastActiveAt
+            }
+    }
+
+    public func secondaryIslandAttentionCount(excluding sessionID: TaskSession.ID?) -> Int {
+        guard let currentFocusID = sessionID else {
+            return islandAttentionSessions.count
+        }
+        return islandAttentionSessions.filter { $0.id != currentFocusID }.count
+    }
+
     public var selectedSession: TaskSession? {
         guard let selectedSessionID else {
             return topSession
