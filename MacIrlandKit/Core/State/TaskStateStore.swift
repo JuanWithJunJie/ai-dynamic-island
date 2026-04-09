@@ -215,7 +215,18 @@ public final class TaskStateStore {
     }
 
     private func mergeHistory(from existingSessions: [TaskSession], into refreshedSessions: [TaskSession]) -> [TaskSession] {
-        let existingByID = Dictionary(uniqueKeysWithValues: existingSessions.map { ($0.id, $0) })
+        // Defensive: build dictionary without crashing on duplicate IDs
+        // If duplicates exist, keep the session with newer lastActiveAt
+        var existingByID: [TaskSession.ID: TaskSession] = [:]
+        for session in existingSessions {
+            if let existing = existingByID[session.id] {
+                if session.lastActiveAt > existing.lastActiveAt {
+                    existingByID[session.id] = session
+                }
+            } else {
+                existingByID[session.id] = session
+            }
+        }
 
         return refreshedSessions.map { refreshedSession in
             guard let existingSession = existingByID[refreshedSession.id] else {
