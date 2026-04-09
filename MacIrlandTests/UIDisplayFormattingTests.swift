@@ -525,6 +525,19 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertNil(presentation.autoCollapseDelay)
     }
 
+    @MainActor
+    func testPanelHeaderUsesSingleSentenceSummaryInsteadOfMultipleDashboardChips() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("FlowChips"))
+    }
+
+    func testPanelHeaderSubtitleStaysFocusedOnCurrentWorkInsteadOfGlobalCounts() {
+        let session = makeSession(status: .waitingInput)
+
+        XCTAssertEqual(session.compactSessionSubtitle, "等待你确认、补充信息或继续执行。")
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",

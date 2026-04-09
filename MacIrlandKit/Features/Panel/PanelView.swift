@@ -3,9 +3,11 @@ import SwiftUI
 public struct PanelView: View {
     @Bindable private var viewModel: TaskStateStore
     @State private var lastActionResult: ReplyValidationResult?
+    @State private var diagnosticsExpanded: Bool
 
     public init(viewModel: TaskStateStore) {
         self.viewModel = viewModel
+        _diagnosticsExpanded = State(initialValue: viewModel.capabilityStatus.showsDiagnosticsExpandedByDefault)
     }
 
     public var body: some View {
@@ -18,38 +20,13 @@ public struct PanelView: View {
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     PanelHeaderView(
                         summary: viewModel.summary,
                         topSession: viewModel.topSession,
                         capabilityStatus: viewModel.capabilityStatus,
                         onRefresh: refresh
                     )
-                    .padding(.bottom, 2)
-
-                    PanelCard(tone: .elevated, padding: 22) {
-                        IslandCompactView(session: viewModel.topSession)
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if let topSession = viewModel.topSession {
-                            MetaChip(topSession.status.label, systemImage: "sparkles", tint: IslandAccent.color(for: topSession.status))
-                                .padding(.top, -10)
-                                .padding(.leading, 14)
-                        }
-                    }
-
-                    PanelCard {
-                        OverviewSectionView(summary: viewModel.summary)
-                    }
-
-                    PanelCard(tone: .elevated) {
-                        SessionPickerView(
-                            sessions: viewModel.sessions,
-                            selectedSessionID: viewModel.selectedSessionID,
-                            emptyStateMessage: sessionEmptyStateMessage,
-                            onSelect: handleSelection
-                        )
-                    }
 
                     if let session = viewModel.selectedSession {
                         PanelCard(tone: .elevated, padding: 20) {
@@ -59,10 +36,28 @@ public struct PanelView: View {
                                 lastActionResult: $lastActionResult
                             )
                         }
+                    } else {
+                        PanelCard(tone: .elevated, padding: 20) {
+                            EmptyWorkspaceView(
+                                summary: viewModel.summary,
+                                topSession: viewModel.topSession,
+                                emptyStateMessage: sessionEmptyStateMessage
+                            )
+                        }
                     }
 
                     PanelCard(tone: .subdued, padding: 16) {
-                        DiagnosticsSectionView(
+                        SessionPickerView(
+                            sessions: viewModel.sessions,
+                            selectedSessionID: viewModel.selectedSessionID,
+                            emptyStateMessage: sessionEmptyStateMessage,
+                            onSelect: handleSelection
+                        )
+                    }
+
+                    PanelCard(tone: .subdued, padding: 16) {
+                        DiagnosticsDisclosureView(
+                            isExpanded: $diagnosticsExpanded,
                             session: viewModel.selectedSession,
                             capabilityStatus: viewModel.capabilityStatus,
                             observationDiagnostics: viewModel.observationDiagnostics
@@ -73,6 +68,11 @@ public struct PanelView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 820)
+        .onChange(of: viewModel.capabilityStatus.observationBlocked) { _, isBlocked in
+            if isBlocked {
+                diagnosticsExpanded = true
+            }
+        }
     }
 
     private func handleSelection(_ session: TaskSession) {
@@ -107,28 +107,16 @@ private struct PanelHeaderView: View {
     let onRefresh: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Text("macirland")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("MacIrland")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
 
-                    Capsule()
-                        .fill((topSession.map { IslandAccent.color(for: $0.status) } ?? .green).opacity(0.9))
-                        .frame(width: 20, height: 8)
-                }
-
-                Text(topSession?.summary ?? "统一观察 AI CLI 会话的状态、提醒与回复入口。")
-                    .font(.subheadline)
+                Text(topSession?.compactSessionSubtitle ?? "这里是 island 的二级详情层，用来继续处理当前会话。")
+                    .font(.footnote)
                     .foregroundStyle(MacIrlandPalette.secondaryText)
                     .lineLimit(2)
-
-                HStack(spacing: 8) {
-                    MetaChip("\(summary.totalCount) 个会话", systemImage: "square.stack.3d.up")
-                    MetaChip("\(summary.attentionCount) 个待关注", systemImage: "bell.badge", tint: summary.attentionCount > 0 ? .orange : nil)
-                    MetaChip(capabilityStatus.localOnlyProcessing ? "本地观察" : "扩展能力", systemImage: "sparkles")
-                }
             }
 
             Spacer()
@@ -139,20 +127,66 @@ private struct PanelHeaderView: View {
                     .foregroundStyle(.white.opacity(0.92))
                     .frame(width: 34, height: 34)
                     .background(MacIrlandPalette.surfaceMuted, in: Circle())
-                    .overlay(
-                        Circle()
-                            .strokeBorder(MacIrlandPalette.border, lineWidth: 1)
-                    )
+                    .overlay(Circle().strokeBorder(MacIrlandPalette.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
     }
 }
 
-private struct FlowChips<Content: View>: View {
-    @ViewBuilder let content: Content
+private struct EmptyWorkspaceView: View {
+    let summary: AppTaskSummary
+    let topSession: TaskSession?
+    let emptyStateMessage: String
 
     var body: some View {
-        content
+        VStack(alignment: .leading, spacing: 16) {
+            PanelSectionHeader("主工作区", subtitle: "这里是 island 的二级详情层，用来继续处理当前会话。")
+
+            Text("还没有可处理的会话")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text(emptyStateMessage)
+                .font(.subheadline)
+                .foregroundStyle(MacIrlandPalette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct DiagnosticsDisclosureView: View {
+    @Binding var isExpanded: Bool
+    let session: TaskSession?
+    let capabilityStatus: CapabilityStatus
+    let observationDiagnostics: ObservationDiagnostics
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            DiagnosticsSectionView(
+                session: session,
+                capabilityStatus: capabilityStatus,
+                observationDiagnostics: observationDiagnostics
+            )
+            .padding(.top, 14)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("诊断")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(isExpanded ? "收起" : "展开")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MacIrlandPalette.tertiaryText)
+                }
+
+                Text(capabilityStatus.panelDiagnosticsSummary)
+                    .font(.caption)
+                    .foregroundStyle(MacIrlandPalette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(.white)
     }
 }
