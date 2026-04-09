@@ -48,6 +48,24 @@
 - Reply bridge 已就绪：支持 Claude Code + Terminal/iTerm 的真实 AppleScript 回写路径，UI 层已与 bridge 状态对齐（island quick action / panel quick action / panel 自由输入均受同一套验证逻辑管控）
 - 当前 `swift test` 和 `swift build` 已通过
 
+## Crash Fix: 1秒自动刷新闪退 (2026-04-10)
+
+### 根因
+- `TaskStateStore.mergeHistory` 使用 `Dictionary(uniqueKeysWithValues:)` 在 `existingSessions` 有重复 `TaskSession.id` 时触发断言崩溃
+- 触发路径：`SessionResolver.resolveSessions` 对相同 logical session 产生多个 TaskSession（相同 sessionID），下一轮 `refresh()` 时在 `mergeHistory` 里崩溃
+
+### 修复方案（三层防护）
+1. **Resolver 去重**：在 `SessionResolver.resolveSessions` 中对相同 ID 的 session 进行合并，保留 `lastActiveAt` 较新者
+2. **Defensive mergeHistory**：将 `Dictionary(uniqueKeysWithValues:)` 替换为防御式 fold，即使上游去重失效也不会 crash
+3. **Single-flight 刷新保护**：`RefreshCoordinator` 增加 `isRefreshing` 标志，防止 1 秒轮询时刷新任务堆积
+
+### 修改文件
+- `MacIrlandKit/Services/SessionRecognition/SessionResolver.swift`
+- `MacIrlandKit/Core/State/TaskStateStore.swift`
+- `MacIrlandApp/App/RefreshCoordinator.swift`
+- `MacIrlandTests/TaskStateStoreTests.swift`（新增 2 个 crash 回归测试）
+- `MacIrlandTests/AppLaunchSupportTests.swift`（新增 2 个 single-flight 测试）
+
 ## 当前限制
 - 真实状态识别仍主要基于终端 transcript 启发式；虽然已改成多信号判定，但复杂长文本场景下仍可能误判
 - 如果系统未授权 Apple Events / 自动化权限，真实 observation 结果会为空
