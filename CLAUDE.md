@@ -39,6 +39,7 @@
 - expanded island 当前已支持 1 个推荐 quick action；它复用已有 `performQuickAction` 路径，并在卡片内显示一行发送结果
 - island 现有已具备轻量展开/收回动效，并按状态执行不同的自动收回策略：`alert` 与 `replyAvailable` 为短暂停留（分别为 8 秒和 12 秒），`waitingInput` / `failed` / `contextLost` 保持常驻直到用户处理或关闭
 - island 仍然不承载自由输入、多按钮动作区或完整回复工作流；更深处理继续进入 panel
+- panel 已进一步退为 island 的二级详情层：打开时默认聚焦当前顶层会话，header 更安静，session 列表和 diagnostics 都进一步降权
 - 当前 menu bar 与 Dock 仍然保留，作为 island 之外的保底入口
 - 真实 observation 当前仍只覆盖 Claude Code；Codex / Gemini 仍主要依赖 mock
 - Reply bridge 仍是 mock，不是真实回写 CLI
