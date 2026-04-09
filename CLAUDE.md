@@ -39,7 +39,10 @@
 - expanded island 当前已支持 1 个推荐 quick action；它复用已有 `performQuickAction` 路径，并在卡片内显示一行发送结果
 - island 现有已具备轻量展开/收回动效，并按状态执行不同的自动收回策略：`alert` 与 `replyAvailable` 为短暂停留（分别为 8 秒和 12 秒），`waitingInput` / `failed` / `contextLost` 保持常驻直到用户处理或关闭
 - island 仍然不承载自由输入、多按钮动作区或完整回复工作流；更深处理继续进入 panel
+- island 现已贴近刘海顶部挂靠：采用 `screen.frame` 顶边定位，`topAnchorInset = 1pt`，compact 和 highlighted 模式共用同一套定位策略
 - panel 已进一步退为 island 的二级详情层：打开时默认聚焦当前顶层会话，header 更安静，session 列表和 diagnostics 都进一步降权
+- panel 现已收成紧凑 detail sheet：窗口从 760x820 缩小到 640x560，首屏内容同步减重，快捷回复保留，自由输入默认折叠，timeline 默认只显示 2 条
+- 应用现已内置固定 1 秒自动刷新：RefreshCoordinator 在 app 启动时自动开始调度，panel 刷新按钮已删除，空态文案不再提及手动刷新
 - 当前 menu bar 与 Dock 仍然保留，作为 island 之外的保底入口
 - 真实 observation 当前仍只覆盖 Claude Code；Codex / Gemini 仍主要依赖 mock
 - Reply bridge 已就绪：支持 Claude Code + Terminal/iTerm 的真实 AppleScript 回写路径，UI 层已与 bridge 状态对齐（island quick action / panel quick action / panel 自由输入均受同一套验证逻辑管控）
@@ -218,3 +221,22 @@
 - 结果 3：compact island 在有额外待处理 session 时显示”另 X 个待处理”。
 - 结果 4：expanded card 在有额外待处理 session 时显示”后面还有 X 个会话待处理”。
 - 结果 5：相关逻辑已有单元测试覆盖；验证命令为 `swift test`、`swift build` 全部通过（137 tests）。
+
+## 本次修改（2026-04-10 notch-anchored + auto-refresh）
+- 修改 1：新增 `MacIrlandApp/App/RefreshCoordinator.swift`，实现应用级固定 1 秒自动刷新调度器，在 app 存活期间持续轮询 `store.refresh()`。
+- 修改 2：更新 `MacIrlandApp/App/AppDelegate.swift`，在启动时持有并启动 `RefreshCoordinator`，`refreshCoordinator.start()` 在 `islandCoordinator` 初始化之后调用。
+- 修改 3：更新 `MacIrlandApp/App/SettingsView.swift`，删除手动”刷新状态”按钮。
+- 修改 4：更新 `MacIrlandApp/App/IslandCoordinator.swift`，将顶边定位从 `visibleFrame` 改为 `screen.frame`，引入 `topAnchorInset = 1pt`，使 island 贴近刘海顶部挂靠。
+- 修改 5：更新 `MacIrlandApp/App/PanelCoordinator.swift`，将 panel 窗口尺寸从 760x820 缩小到 640x560。
+- 修改 6：更新 `MacIrlandKit/Features/Panel/PanelView.swift`，删除 `PanelHeaderView` 的刷新按钮和相关回调，更新 blocked 空态文案（不再提及”点击右上角刷新”），调整 padding 从 24/20/16 减到 18/16/14，frame minSize 从 760x820 改为 640x560。
+- 修改 7：更新 `MacIrlandKit/Features/Panel/SessionDetailView.swift`，timeline preview 默认只显示 2 条（`prefix(2)`），自由输入包装在折叠 `DisclosureGroup` 中。
+- 修改 8：更新 `MacIrlandKit/Features/Panel/SessionPickerView.swift`，将 header 从”任务列表”改为”其他会话”，副标题改为”同一时期内的其他等待会话。”
+- 修改 9：更新 `MacIrlandTests/AppLaunchSupportTests.swift`，新增 `testAppDelegateOwnsRefreshCoordinatorForAppWidePolling`、`testRefreshCoordinatorUsesOneSecondInterval`、`testAppDelegateStartsRefreshCoordinatorAtLaunch`、`testSettingsViewNoLongerShowsManualRefreshButton`、`testIslandCoordinatorAnchorsAgainstFullScreenFrame`、`testIslandCoordinatorDefinesSmallTopAnchorInset`、`testPanelCoordinatorUsesCompactDetailSheetSize`、`testPanelHeaderNoLongerRendersRefreshButton`、`testBlockedEmptyStateNoLongerReferencesManualRefresh`。
+- 修改 10：更新 `MacIrlandTests/UIDisplayFormattingTests.swift`，新增 `testSessionDetailTimelinePreviewEntriesDefaultToNewestTwoItems`、`testSessionDetailFreeInputUsesCollapsedDisclosure`、`testSessionPickerUsesSecondaryNavigationCopy`，并调整 `testPanelUsesSubduedCardToneForSessionList` 和 `testSessionDetailViewUsesTimelinePreviewEntriesForRenderedTimeline` 以匹配新的 padding 和 timeline 条数。
+
+## 本次结果（2026-04-10 notch-anchored + auto-refresh）
+- 结果 1：island 现已贴近刘海顶部挂靠，`screen.frame` 顶边定位 + `topAnchorInset = 1pt`，视觉上更像挂在刘海位置而不是悬在菜单栏下方。
+- 结果 2：应用级自动刷新已就绪，`RefreshCoordinator` 在 app 启动时自动开始 1 秒轮询，用户不再需要手动点刷新。
+- 结果 3：panel 刷新按钮已删除，header 更安静，empty state 文案不再提及手动刷新操作。
+- 结果 4：panel 已收成紧凑 detail sheet：640x560 窗口 + 同步减重的首屏内容（padding 收紧、timeline 只显示 2 条、自由输入默认折叠、其他会话标题降级）。
+- 结果 5：相关逻辑已有单元测试覆盖；验证命令为 `swift test`（158 tests）、`swift build` 全部通过。
