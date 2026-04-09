@@ -53,37 +53,34 @@ private struct SessionPickerRow: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
             StatusSpriteView(status: session.status)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(session.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    StatusBadge(status: session.status)
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
 
-                Text(session.summary)
+                Text(session.compactSessionSubtitle)
                     .font(.caption)
                     .foregroundStyle(MacIrlandPalette.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .lineLimit(2)
+                    .lineLimit(1)
+            }
 
-                HStack(spacing: 8) {
-                    MetaChip(session.sourceCLI.displayName, systemImage: "cpu")
-                    MetaChip(session.terminalDisplayName, systemImage: "terminal")
-                    MetaChip(session.relativeLastActiveText, systemImage: "clock")
-                    MetaChip("\(Int(session.confidence * 100))%", systemImage: "scope")
-                    if session.isAwaitingUser {
-                        MetaChip("等待处理", systemImage: "exclamationmark.circle.fill", tint: .orange)
-                    }
-                }
+            Spacer(minLength: 8)
+
+            if session.isAwaitingUser {
+                MetaChip("等待处理", systemImage: "hand.raised.fill", tint: .orange)
+            } else {
+                Text(session.relativeLastActiveText)
+                    .font(.caption)
+                    .foregroundStyle(MacIrlandPalette.tertiaryText)
             }
         }
-        .padding(16)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(

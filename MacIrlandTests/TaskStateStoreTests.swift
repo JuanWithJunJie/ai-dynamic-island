@@ -1046,6 +1046,74 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    func testHigherTierPreemptsLowerTierInAttentionQueue() {
+        let runningEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Running tasks...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · running",
+                commandLine: "claude",
+                ttyIdentifier: "ttys080"
+            )
+        )
+        let waitingEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Waiting for input.",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · waiting",
+                commandLine: "claude",
+                ttyIdentifier: "ttys081"
+            )
+        )
+
+        let source = MutableObservationService(initialEvents: [runningEvent])
+        let store = TaskStateStore(observationService: source)
+
+        XCTAssertEqual(store.preferredIslandSession?.status, .running)
+
+        source.updateEvents([runningEvent, waitingEvent])
+        store.refresh()
+
+        XCTAssertEqual(store.preferredIslandSession?.status, .waitingInput)
+    }
+
+    func testReplyFailureLeavesMeaningfulHistoryEntry() {
+        let service = MockReplyBridgeService()
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [waitingClaudeEvent], diagnostics: .empty),
+            replyBridge: service
+        )
+
+        guard let session = store.sessions.first else {
+            XCTFail("Expected a session")
+            return
+        }
+
+        store.draftReply = "   "
+        let result = store.sendDraftReply(for: session)
+        XCTAssertFalse(result.canSend)
+        XCTAssertNotNil(result.explanation)
+
+        let historyKinds = store.sessions.first?.historyEntries.map(\.kind) ?? []
+        XCTAssertTrue(historyKinds.contains(.userReplyRejected))
+    }
+
+    func testDismissThenReopenPanelPreservesSelection() {
+        let service = StubObservationService(events: [waitingClaudeEvent], diagnostics: .empty)
+        let store = TaskStateStore(observationService: service)
+
+        guard let originalSession = store.selectedSession else {
+            XCTFail("Expected a selected session")
+            return
+        }
+
+        store.refresh()
+
+        XCTAssertEqual(store.selectedSession?.id, originalSession.id)
+    }
+
     private var prioritizedEvents: [RawCLIEvent] {
         [
             RawCLIEvent(
