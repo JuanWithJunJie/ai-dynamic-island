@@ -37,6 +37,7 @@
 - 已新增顶部 compact island / status strip：默认显示图标、状态词和会话数；点击后可直接打开主 panel
 - island 当前已具备 compact + expanded 两层形态：常态显示图标、状态词和会话数；高优先级会话会展开成单条任务卡，点击后进入 panel
 - expanded island 当前已支持 1 个推荐 quick action；它复用已有 `performQuickAction` 路径，并在卡片内显示一行发送结果
+- island 现有已具备轻量展开/收回动效，并按状态执行不同的自动收回策略：`alert` 与 `replyAvailable` 为短暂停留（分别为 8 秒和 12 秒），`waitingInput` / `failed` / `contextLost` 保持常驻直到用户处理或关闭
 - island 仍然不承载自由输入、多按钮动作区或完整回复工作流；更深处理继续进入 panel
 - 当前 menu bar 与 Dock 仍然保留，作为 island 之外的保底入口
 - 真实 observation 当前仍只覆盖 Claude Code；Codex / Gemini 仍主要依赖 mock
