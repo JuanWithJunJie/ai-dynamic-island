@@ -633,6 +633,53 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertTrue(source.contains("这里是 island 的二级详情层"))
     }
 
+    @MainActor
+    func testReplyBridgeExplanationsAreUserFacing() {
+        let service = MockReplyBridgeService()
+
+        let emptyResult = service.validateReply(for: makeSession(), message: "   \n")
+        XCTAssertFalse(emptyResult.explanation.contains("AppleScript"))
+        XCTAssertFalse(emptyResult.explanation.contains("NSAppleEvent"))
+        XCTAssertFalse(emptyResult.explanation.contains("bridge"))
+        XCTAssertFalse(emptyResult.explanation.contains("Impl"))
+
+        let unavailableCapabilityResult = service.validateReply(
+            for: makeSession(
+                bridgeTarget: BridgeTarget(
+                    cliKind: .claudeCode,
+                    sessionID: UUID(),
+                    terminalContext: "Claude Code · reply",
+                    channelType: "applescript-terminal",
+                    displayName: "Claude Code · reply"
+                ),
+                replyCapabilityStatus: .unavailable,
+                replyCapabilityReason: "终端自动化权限未授权。"
+            ),
+            message: "continue"
+        )
+        XCTAssertEqual(unavailableCapabilityResult.explanation, "终端自动化权限未授权。")
+        XCTAssertFalse(unavailableCapabilityResult.explanation.contains("status"))
+    }
+
+    @MainActor
+    func testReplyBridgeSuccessExplanationReferencesTerminalApp() {
+        let service = MockReplyBridgeService()
+        let session = makeSession(
+            bridgeTarget: BridgeTarget(
+                cliKind: .claudeCode,
+                sessionID: UUID(),
+                terminalContext: "Claude Code · reply",
+                channelType: "applescript-terminal",
+                displayName: "Claude Code · reply"
+            )
+        )
+
+        let result = service.sendReply(to: session, message: "continue")
+
+        XCTAssertTrue(result.explanation.contains("Claude Code"))
+        XCTAssertTrue(result.canSend || result.explanation.contains("重试") || result.explanation.contains("刷新"))
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
