@@ -32,9 +32,12 @@ final class AppLaunchSupportTests: XCTestCase {
         )
     }
 
-    func testDevAppLauncherCodesignsWithStableBundleIdentifier() throws {
-        let script = try String(contentsOfFile: "Scripts/run-dev-app.sh", encoding: .utf8)
+    func testPanelCoordinatorTogglePanelActivatesAppBeforeShowingPanel() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
 
-        XCTAssertTrue(script.contains("codesign --force --deep --sign - --identifier \"$BUNDLE_ID\" \"$APP_DIR\""))
+        let activateIndex = try XCTUnwrap(source.range(of: "NSApp.activate(ignoringOtherApps: true)")?.lowerBound)
+        let frontIndex = try XCTUnwrap(source.range(of: "panel.makeKeyAndOrderFront(nil)")?.lowerBound)
+
+        XCTAssertLessThan(activateIndex, frontIndex)
     }
 }

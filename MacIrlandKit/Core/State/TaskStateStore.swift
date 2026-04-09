@@ -9,8 +9,21 @@ public final class TaskStateStore {
     public private(set) var observationDiagnostics: ObservationDiagnostics
     public private(set) var selectedSessionID: TaskSession.ID?
     public var soundMode: SoundMode
-    public var draftReply: String
+    public var draftReply: String {
+        didSet {
+            guard let selectedSessionID else {
+                return
+            }
 
+            if draftReply.isEmpty {
+                draftRepliesBySessionID.removeValue(forKey: selectedSessionID)
+            } else {
+                draftRepliesBySessionID[selectedSessionID] = draftReply
+            }
+        }
+    }
+
+    private var draftRepliesBySessionID: [TaskSession.ID: String]
     private let observationService: any ObservationProviding
     private let sessionResolver: SessionResolver
     private let aggregationEngine: TaskAggregationEngine
@@ -38,6 +51,7 @@ public final class TaskStateStore {
         self.registry = registry
         self.automationPermissionService = permissionService as? AutomationPermissionService
         self.soundMode = localStore.loadSoundMode()
+        self.draftRepliesBySessionID = [:]
         self.draftReply = ""
         self.capabilityStatus = permissionService.currentStatus()
         self.observationDiagnostics = ObservationDiagnostics(readers: [], sessions: [])
@@ -50,6 +64,7 @@ public final class TaskStateStore {
         self.sessions = prioritizedSessions
         self.summary = initialSummary
         self.selectedSessionID = prioritizedSessions.first?.id
+        self.draftReply = prioritizedSessions.first.flatMap { draftRepliesBySessionID[$0.id] } ?? ""
         self.observationDiagnostics = initialSnapshot.diagnostics
         self.capabilityStatus = capabilityStatus(for: initialEvents, resolvedSessions: prioritizedSessions)
     }
@@ -85,20 +100,18 @@ public final class TaskStateStore {
     }
 
     public func selectSession(id: TaskSession.ID?) {
-        guard let id else {
-            selectedSessionID = sessions.first?.id
-            draftReply = ""
-            return
+        let nextSelectedID: TaskSession.ID?
+        if let id {
+            guard sessions.contains(where: { $0.id == id }) else {
+                return
+            }
+            nextSelectedID = id
+        } else {
+            nextSelectedID = sessions.first?.id
         }
 
-        guard sessions.contains(where: { $0.id == id }) else {
-            return
-        }
-
-        if selectedSessionID != id {
-            draftReply = ""
-        }
-        selectedSessionID = id
+        selectedSessionID = nextSelectedID
+        draftReply = nextSelectedID.flatMap { draftRepliesBySessionID[$0] } ?? ""
     }
 
     public func update(soundMode: SoundMode) {
@@ -108,7 +121,7 @@ public final class TaskStateStore {
 
     public func performQuickAction(_ action: ReplyActionType, for session: TaskSession) -> ReplyValidationResult {
         let message = action == .customText ? draftReply : action.defaultMessage
-        let result = replyBridge.validateReply(for: session, message: message)
+        let result = replyBridge.sendReply(to: session, message: message)
         let entry = SessionHistoryEntry(
             kind: result.canSend ? .userQuickAction : .userReplyRejected,
             title: result.canSend ? action.title : "回复被拒绝",
@@ -116,6 +129,12 @@ public final class TaskStateStore {
             relatedStatus: session.status
         )
         appendHistoryEntry(entry, toSessionWithID: session.id)
+        if result.canSend {
+            draftRepliesBySessionID.removeValue(forKey: session.id)
+            if selectedSessionID == session.id {
+                draftReply = ""
+            }
+        }
         return result
     }
 
@@ -128,6 +147,12 @@ public final class TaskStateStore {
             relatedStatus: session.status
         )
         appendHistoryEntry(entry, toSessionWithID: session.id)
+        if result.canSend {
+            draftRepliesBySessionID.removeValue(forKey: session.id)
+            if selectedSessionID == session.id {
+                draftReply = ""
+            }
+        }
         return result
     }
 
@@ -149,9 +174,7 @@ public final class TaskStateStore {
         }
 
         selectedSessionID = sessions.first?.id
-        if selectedSessionID == nil {
-            draftReply = ""
-        }
+        draftReply = selectedSessionID.flatMap { draftRepliesBySessionID[$0] } ?? ""
     }
 
     private func mergeHistory(from existingSessions: [TaskSession], into refreshedSessions: [TaskSession]) -> [TaskSession] {

@@ -74,7 +74,7 @@ final class TaskStateStoreTests: XCTestCase {
     }
 
     func testPerformQuickActionAppendsRejectedHistoryWhenReplyCannotSend() throws {
-        let replyBridge = ConfigurableReplyBridge(validateResult: ReplyValidationResult(canSend: false, explanation: "Bridge unavailable"))
+        let replyBridge = ConfigurableReplyBridge(sendResult: ReplyValidationResult(canSend: false, explanation: "Bridge unavailable"))
         let store = TaskStateStore(
             observationService: StubObservationService(events: [replyAvailableClaudeEvent], diagnostics: .empty),
             replyBridge: replyBridge
@@ -89,8 +89,11 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertEqual(store.sessions.first?.historyEntries.last?.detail, "Bridge unavailable")
     }
 
-    func testPerformQuickActionAcceptedPathAppendsUserQuickActionHistory() throws {
-        let replyBridge = ConfigurableReplyBridge(validateResult: ReplyValidationResult(canSend: true, explanation: "Ready to send"))
+    func testPerformQuickActionUsesSendPathAndAppendsUserQuickActionHistory() throws {
+        let replyBridge = ConfigurableReplyBridge(
+            validateResult: ReplyValidationResult(canSend: false, explanation: "Should not use validate"),
+            sendResult: ReplyValidationResult(canSend: true, explanation: "Sent quick action")
+        )
         let store = TaskStateStore(
             observationService: StubObservationService(events: [replyAvailableClaudeEvent], diagnostics: .empty),
             replyBridge: replyBridge
@@ -100,9 +103,48 @@ final class TaskStateStoreTests: XCTestCase {
         let result = store.performQuickAction(.continueExecution, for: session)
 
         XCTAssertTrue(result.canSend)
-        XCTAssertEqual(result.explanation, "Ready to send")
+        XCTAssertEqual(result.explanation, "Sent quick action")
+        XCTAssertEqual(replyBridge.validateCallCount, 0)
+        XCTAssertEqual(replyBridge.sendCallCount, 1)
+        XCTAssertEqual(replyBridge.lastSentMessage, ReplyActionType.continueExecution.defaultMessage)
         XCTAssertEqual(store.sessions.first?.historyEntries.map(\.kind), [.phaseWaitingInput, .userQuickAction])
         XCTAssertEqual(store.sessions.first?.historyEntries.last?.detail, ReplyActionType.continueExecution.defaultMessage)
+    }
+
+    func testPerformQuickActionClearsDraftReplyAfterSuccessfulSend() throws {
+        let replyBridge = ConfigurableReplyBridge(sendResult: ReplyValidationResult(canSend: true, explanation: "Sent quick action"))
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [replyAvailableClaudeEvent], diagnostics: .empty),
+            replyBridge: replyBridge
+        )
+        let session = try XCTUnwrap(store.sessions.first as TaskSession?)
+        store.draftReply = "temporary text"
+
+        _ = store.performQuickAction(.continueExecution, for: session)
+
+        XCTAssertEqual(store.draftReply, "")
+    }
+
+    func testSendDraftReplyClearsDraftReplyAfterSuccessfulSend() throws {
+        let replyBridge = ConfigurableReplyBridge(sendResult: ReplyValidationResult(canSend: true, explanation: "Sent"))
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [replyAvailableClaudeEvent], diagnostics: .empty),
+            replyBridge: replyBridge
+        )
+        let session = try XCTUnwrap(store.sessions.first as TaskSession?)
+        store.draftReply = "Please continue with the refactor."
+
+        _ = store.sendDraftReply(for: session)
+
+        XCTAssertEqual(store.draftReply, "")
+    }
+
+    func testClaudeAdapterMarksTerminalSessionAsRealReplyCandidate() {
+        let session = BuiltInCLIAdapter.claudeCode.buildSession(from: replyAvailableClaudeEvent)
+
+        XCTAssertEqual(session?.replyCapability.status, .available)
+        XCTAssertEqual(session?.replyCapability.channelStatus, "applescript-terminal")
+        XCTAssertEqual(session?.bridgeTarget?.channelType, "applescript-terminal")
     }
 
     func testSendDraftReplyAppendsCustomReplyHistoryWhenSendSucceeds() throws {
@@ -139,15 +181,44 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertEqual(store.sessions.first?.historyEntries.last?.detail, "Send denied")
     }
 
-    func testSelectSessionUpdatesSelectedSession() throws {
+    func testDraftReplyIsScopedPerSessionWhenSwitchingSelections() throws {
         let store = TaskStateStore(
             observationService: StubObservationService(events: prioritizedEvents, diagnostics: .empty)
         )
-        let secondSession = try XCTUnwrap(store.sessions.last)
+        let first = try XCTUnwrap(store.sessions.first)
+        let second = try XCTUnwrap(store.sessions.last)
 
-        store.selectSession(secondSession)
+        store.selectSession(first)
+        store.draftReply = "first draft"
 
-        XCTAssertEqual(store.selectedSession?.id, secondSession.id)
+        store.selectSession(second)
+        XCTAssertEqual(store.draftReply, "")
+
+        store.draftReply = "second draft"
+        store.selectSession(first)
+
+        XCTAssertEqual(store.draftReply, "first draft")
+    }
+
+    func testSendDraftReplyClearsOnlyCurrentSessionDraft() throws {
+        let replyBridge = ConfigurableReplyBridge(sendResult: ReplyValidationResult(canSend: true, explanation: "Sent"))
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: prioritizedEvents, diagnostics: .empty),
+            replyBridge: replyBridge
+        )
+        let first = try XCTUnwrap(store.sessions.first)
+        let second = try XCTUnwrap(store.sessions.last)
+
+        store.selectSession(first)
+        store.draftReply = "first draft"
+        store.selectSession(second)
+        store.draftReply = "second draft"
+
+        _ = store.sendDraftReply(for: second)
+        XCTAssertEqual(store.draftReply, "")
+
+        store.selectSession(first)
+        XCTAssertEqual(store.draftReply, "first draft")
     }
 
     func testRefreshPreservesSelectedSessionWhenLogicalSessionRemains() throws {
@@ -905,9 +976,13 @@ private struct StubPermissionService: PermissionProviding {
     }
 }
 
-private final class ConfigurableReplyBridge: ReplyBridging {
+private final class ConfigurableReplyBridge: ReplyBridging, @unchecked Sendable {
     let validateResult: ReplyValidationResult
     let sendResult: ReplyValidationResult
+    private(set) var validateCallCount = 0
+    private(set) var sendCallCount = 0
+    private(set) var lastValidatedMessage: String?
+    private(set) var lastSentMessage: String?
 
     init(
         validateResult: ReplyValidationResult = ReplyValidationResult(canSend: true, explanation: "Ready"),
@@ -918,11 +993,15 @@ private final class ConfigurableReplyBridge: ReplyBridging {
     }
 
     func validateReply(for session: TaskSession, message: String) -> ReplyValidationResult {
-        validateResult
+        validateCallCount += 1
+        lastValidatedMessage = message
+        return validateResult
     }
 
     func sendReply(to session: TaskSession, message: String) -> ReplyValidationResult {
-        sendResult
+        sendCallCount += 1
+        lastSentMessage = message
+        return sendResult
     }
 }
 

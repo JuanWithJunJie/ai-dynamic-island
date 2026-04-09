@@ -35,8 +35,8 @@ final class PanelCoordinator {
         if panel.isVisible {
             panel.orderOut(nil)
         } else {
-            panel.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
         }
     }
 }

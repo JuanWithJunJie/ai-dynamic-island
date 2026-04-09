@@ -4,17 +4,19 @@ public struct BuiltInCLIAdapter: CLIAdapter {
     public let cliKind: CLIKind
     public let commandTokens: [String]
     public let supportedQuickActions: [ReplyActionType]
-    public let replyCapability: ReplyCapability
 
     public init(cliKind: CLIKind, commandTokens: [String]) {
         self.cliKind = cliKind
         self.commandTokens = commandTokens
         self.supportedQuickActions = [.continueExecution, .retry, .explainReason, .stop, .supplementInfo, .customText]
-        self.replyCapability = ReplyCapability(
+    }
+
+    public var replyCapability: ReplyCapability {
+        ReplyCapability(
             status: .manualConfirmationRequired,
-            reason: "MVP 骨架阶段尚未接入真实桥接通道。",
+            reason: "该适配器不支持固定会话级能力，请以会话实时能力为准。",
             targetDescription: cliKind.displayName,
-            channelStatus: "mock"
+            channelStatus: "dynamic"
         )
     }
 
@@ -52,9 +54,10 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             cliKind: cliKind,
             sessionID: identity.id,
             terminalContext: event.snapshot.windowTitle,
-            channelType: "mock-terminal",
+            channelType: replyChannelType(for: event.snapshot.terminalAppIdentifier),
             displayName: "\(cliKind.displayName) · \(event.snapshot.windowTitle)"
         )
+        let replyCapability = replyCapability(for: event.snapshot)
         let initialHistoryEntry = SessionHistoryEntry(
             timestamp: event.timestamp,
             kind: Self.historyKind(for: sessionStatus),
@@ -153,6 +156,56 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             matchedSignals: 1,
             dominantReason: "adapter fallback"
         )
+    }
+
+    private func replyCapability(for snapshot: TerminalObservationSnapshot) -> ReplyCapability {
+        guard cliKind == .claudeCode else {
+            return ReplyCapability(
+                status: .manualConfirmationRequired,
+                reason: "当前仅 Claude Code 接入真实 reply bridge。",
+                targetDescription: cliKind.displayName,
+                channelStatus: "unsupported-cli"
+            )
+        }
+
+        switch snapshot.terminalAppIdentifier {
+        case "com.apple.Terminal":
+            return ReplyCapability(
+                status: .available,
+                reason: "已接入真实 reply bridge，可直接发送到 Claude Code 终端会话。",
+                targetDescription: cliKind.displayName,
+                channelStatus: "applescript-terminal"
+            )
+        case "com.googlecode.iterm2":
+            return ReplyCapability(
+                status: .available,
+                reason: "已接入真实 reply bridge，可直接发送到 Claude Code 终端会话。",
+                targetDescription: cliKind.displayName,
+                channelStatus: "applescript-iterm"
+            )
+        default:
+            return ReplyCapability(
+                status: .manualConfirmationRequired,
+                reason: "当前仅支持通过 Terminal 或 iTerm 向 Claude Code 会话发送回复。",
+                targetDescription: cliKind.displayName,
+                channelStatus: "unsupported-terminal"
+            )
+        }
+    }
+
+    private func replyChannelType(for terminalAppIdentifier: String) -> String {
+        guard cliKind == .claudeCode else {
+            return "unsupported-cli"
+        }
+
+        switch terminalAppIdentifier {
+        case "com.apple.Terminal":
+            return "applescript-terminal"
+        case "com.googlecode.iterm2":
+            return "applescript-iterm"
+        default:
+            return "unsupported-terminal"
+        }
     }
 
     private static func status(for snippet: String) -> TaskStatus {
