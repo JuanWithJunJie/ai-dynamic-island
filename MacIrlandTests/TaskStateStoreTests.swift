@@ -1046,6 +1046,24 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    func testRefreshDeduplicatesSessionsWithSameStableIdentity() {
+        let source = MutableObservationService(initialEvents: [runningClaudeEvent])
+        let store = TaskStateStore(observationService: source)
+
+        XCTAssertEqual(Set(store.sessions.map(\.id)).count, store.sessions.count)
+    }
+
+    func testRefreshDoesNotCrashWhenObservationContainsDuplicateLogicalSessions() {
+        let source = MutableObservationService(initialEvents: [runningClaudeEvent])
+        let store = TaskStateStore(observationService: source)
+
+        source.updateEvents([waitingClaudeEvent, waitingClaudeEvent])
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.count, 1)
+        XCTAssertEqual(store.sessions.first?.status, .waitingInput)
+    }
+
     func testHigherTierPreemptsLowerTierInAttentionQueue() {
         let runningEvent = RawCLIEvent(
             cliKind: .claudeCode,
