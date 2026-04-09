@@ -37,6 +37,7 @@ public struct HighlightedIslandPresentation: Equatable {
     public let accentColor: Color
     public let primaryAction: ReplyActionType?
     public let primaryActionTitle: String?
+    public let autoCollapseDelay: TimeInterval?
 
     public init?(topSession: TaskSession?) {
         guard let topSession, topSession.status.needsAttention else {
@@ -55,5 +56,16 @@ public struct HighlightedIslandPresentation: Equatable {
         accentColor = IslandAccent.color(for: topSession.status)
         primaryAction = visibleQuickActions.first
         primaryActionTitle = visibleQuickActions.first?.title
+
+        switch topSession.status {
+        case .alert:
+            autoCollapseDelay = 8
+        case .replyAvailable:
+            autoCollapseDelay = 12
+        case .waitingInput, .failed, .contextLost:
+            autoCollapseDelay = nil
+        default:
+            autoCollapseDelay = nil
+        }
     }
 }

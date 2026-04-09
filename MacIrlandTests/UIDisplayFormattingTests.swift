@@ -467,6 +467,42 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertNil(presentation?.primaryActionTitle)
     }
 
+    func testHighlightedIslandPresentationAutoCollapseDelayIsNilForWaitingInput() {
+        let session = makeSession(status: .waitingInput)
+        guard let presentation = HighlightedIslandPresentation(topSession: session) else {
+            XCTFail("Expected non-nil presentation for waitingInput session")
+            return
+        }
+        XCTAssertNil(presentation.autoCollapseDelay)
+    }
+
+    func testHighlightedIslandPresentationAutoCollapseDelayIsNilForFailedSession() {
+        let session = makeSession(status: .failed)
+        guard let presentation = HighlightedIslandPresentation(topSession: session) else {
+            XCTFail("Expected non-nil presentation for failed session")
+            return
+        }
+        XCTAssertNil(presentation.autoCollapseDelay)
+    }
+
+    func testHighlightedIslandPresentationAutoCollapseDelayUsesEightSecondsForAlert() {
+        let session = makeSession(status: .alert)
+        guard let presentation = HighlightedIslandPresentation(topSession: session) else {
+            XCTFail("Expected non-nil presentation for alert session")
+            return
+        }
+        XCTAssertEqual(presentation.autoCollapseDelay, 8)
+    }
+
+    func testHighlightedIslandPresentationAutoCollapseDelayUsesTwelveSecondsForReplyAvailable() {
+        let session = makeSession(status: .replyAvailable)
+        guard let presentation = HighlightedIslandPresentation(topSession: session) else {
+            XCTFail("Expected non-nil presentation for replyAvailable session")
+            return
+        }
+        XCTAssertEqual(presentation.autoCollapseDelay, 12)
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
