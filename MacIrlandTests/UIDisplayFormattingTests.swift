@@ -503,6 +503,28 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertEqual(presentation.autoCollapseDelay, 12)
     }
 
+    func testHighlightedIslandPresentationKeepsContextLostPersistent() {
+        let session = makeSession(status: .contextLost)
+        guard let presentation = HighlightedIslandPresentation(topSession: session) else {
+            XCTFail("Expected non-nil presentation for contextLost session")
+            return
+        }
+        XCTAssertNil(presentation.autoCollapseDelay)
+    }
+
+    func testHighlightedIslandPresentationKeepsWaitingInputPersistentEvenWithPrimaryAction() {
+        let session = makeSession(
+            status: .waitingInput,
+            quickActions: [.continueExecution, .customText]
+        )
+        guard let presentation = HighlightedIslandPresentation(topSession: session) else {
+            XCTFail("Expected non-nil presentation for waitingInput session")
+            return
+        }
+        XCTAssertEqual(presentation.primaryActionTitle, "继续执行")
+        XCTAssertNil(presentation.autoCollapseDelay)
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
