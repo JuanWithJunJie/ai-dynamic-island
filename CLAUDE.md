@@ -17,21 +17,28 @@
 - 已把 Claude Code 的真实状态识别推进到更可用：可区分 running / waiting input / completed / alert / failed / contextLost
 - Claude Code 状态判定已从纯关键词命中升级为轻量多信号判定，并在 real observation / adapter 两条路径复用同一套 judgement
 - 已补上本地 dev `.app` 启动路径：不再只依赖 `swift run`，可通过脚本打包并启动菜单栏 app 形态
-- dev 启动脚本现在会在重启前显式结束旧的 `MacIrland` 进程，避免 macOS 复用旧实例导致“以为已经更新，实际还是旧 UI / 旧逻辑”的假象
-- 菜单栏入口已改成 SwiftUI `MenuBarExtra` 生命周期承载，不再只依赖 AppDelegate 里手工创建 `NSStatusItem`
+- dev 启动脚本现在会在重启前显式结束旧的 `MacIrland` 进程，避免 macOS 复用旧实例导致”以为已经更新，实际还是旧 UI / 旧逻辑”的假象
+- 应用入口当前由 AppDelegate 持有的 `StatusBarController` 承载，并已切回 `.regular` activation policy；除了状态栏按钮外，Dock 里也有稳定入口
 - 已按 `docs/superpowers/plans/2026-04-06-ui-reference-alignment.md` 落下第一刀 UI 对齐：菜单栏入口改为更接近参考图 1 的紧凑胶囊状态块，主浮动面板改成接近参考图 2 的深色悬浮壳
-- 已在第一刀基础上继续做收敛：菜单栏胶囊进一步减重减宽，panel 层级从“多张同权重卡片堆叠”收回到更清晰的主次结构
+- 已在第一刀基础上继续做收敛：菜单栏胶囊进一步减重减宽，panel 层级从”多张同权重卡片堆叠”收回到更清晰的主次结构
 - 已根据实际体验反馈再次回调菜单栏入口可见性：恢复更明确的终端 icon 和更实一点的对比度，避免胶囊太透明、太难定位
 - 已进一步放弃过度极简的菜单栏胶囊方案，改回更接近原生菜单栏入口的宽标签：icon + MI + 状态数字，优先保证在刘海屏旁边更容易被看到
 - 已新增一层轻量设计系统：深色背景、表面层级、卡片容器、chip/tag 组件和展示格式 helper，避免样式散落在各个 view 里硬写
 - session 列表已从偏工程化列表推进到 feed/card 风格，详情区也已拆成更清晰的摘要卡、事件卡、消息卡和回复卡
 - 已继续推进第二刀：详情区加入主操作提示和 activity timeline，展开态更接近参考图 2 的工作台 / feed 感
-- 已新增启动方式识别：如果直接运行可执行文件而不是 `.app`，应用会弹窗提示改用 `./Scripts/run-dev-app.sh`，并在提示后退出，避免出现“进程在跑但菜单栏没有入口”的误判
+- 已新增启动方式识别：如果直接运行可执行文件而不是 `.app`，应用会弹窗提示改用 `./Scripts/run-dev-app.sh`，并在提示后退出，避免出现”进程在跑但菜单栏没有入口”的误判
 - 已开始回到真实 observation 稳定性：Claude Code 识别不再只依赖非常窄的 `claude` 命中，还能兼容更真实的 Terminal / iTerm 命令元数据；当终端在运行但本轮读不到会话时，panel 空态也会明确提示可能是自动化权限或读取失败
-- 已进一步把“猜不到为什么没识别到”变成“直接看本轮 observation 读到了什么”：diagnostics 区现在会展示 Terminal / iTerm reader 结果、raw session 元数据，以及 observation 被识别或丢弃的原因
+- 已进一步把”猜不到为什么没识别到”变成”直接看本轮 observation 读到了什么”：diagnostics 区现在会展示 Terminal / iTerm reader 结果、raw session 元数据，以及 observation 被识别或丢弃的原因
 - 已继续收尾 Claude Code 真实发现稳定性：一次 refresh 现在会消费同一份 observation snapshot，避免 session 列表和 diagnostics 来自两轮不同抓取；AppleScript reader 也会保留更具体的错误说明，方便判断是权限问题还是读取失败
 - 已修复 dev `.app` 的 Apple Events 身份稳定性：补上 `NSAppleEventsUsageDescription`，并让打包脚本用稳定的 `com.macirland.app` 对 `.app` 重新签名，避免系统把每次构建都当成不同的自动化主体
 - 已补上 Claude 会话识别的 transcript fallback：当 iTerm / Terminal 的 `windowTitle` 或 `commandLine` 不可靠时，也能从 Claude Code header 预览里识别会话，避免 `raw > 0` 但 `recognized = 0`
+- 已补上 GitHub 交付链路的稳定说明：这台机器访问 GitHub 需要走本地 ClashX 代理，终端与 Claude Code 如果没继承代理环境，`git` / `gh` 会表现成”无法连接 GitHub”
+- panel 已进一步精简为介入优先流：overview / hero 已下调，reply 区和主工作区上移，diagnostics 默认折叠
+- 已新增顶部 compact island / status strip：默认显示图标、状态词和会话数；点击后可直接打开主 panel
+- island 当前已具备 compact + expanded 两层形态：常态显示图标、状态词和会话数；高优先级会话会展开成单条任务卡，点击后进入 panel
+- expanded island 当前已支持 1 个推荐 quick action；它复用已有 `performQuickAction` 路径，并在卡片内显示一行发送结果
+- island 仍然不承载自由输入、多按钮动作区或完整回复工作流；更深处理继续进入 panel
+- 当前 menu bar 与 Dock 仍然保留，作为 island 之外的保底入口
 - 真实 observation 当前仍只覆盖 Claude Code；Codex / Gemini 仍主要依赖 mock
 - Reply bridge 仍是 mock，不是真实回写 CLI
 - 当前 `swift test` 和 `swift build` 已通过
@@ -40,12 +47,12 @@
 - 真实状态识别仍主要基于终端 transcript 启发式；虽然已改成多信号判定，但复杂长文本场景下仍可能误判
 - 如果系统未授权 Apple Events / 自动化权限，真实 observation 结果会为空
 - Reply bridge 还是 mock，不是真实回写 CLI
-- `draftReply` 仍是全局草稿，不是每个 session 各自独立
+- 每个 session 现在都有各自独立的 reply 草稿缓存，但仍只保存在当前 app 运行期内，重启后不会保留
 - 本地运行菜单栏体验当前依赖新加的 dev app 启动脚本，不是完整发行形态
 - 目前对“错误启动方式”的处理是弹窗提示并退出，不会尝试兼容裸可执行文件直跑
-- 菜单栏入口位置仍由 macOS 决定；本轮只能通过更紧凑的胶囊 label 降低被刘海/拥挤状态栏遮挡的概率，不能精确控制位置
+- 菜单栏入口位置仍由 macOS 决定；刘海屏和拥挤状态栏下依然可能被系统挤压，所以当前同时保留 Dock 图标作为稳定入口
 - 当前 UI 已明显朝参考图靠拢，但还没有做复杂动画、真实 reply bridge、或更深的 session 时间线设计
-- 当前 timeline 仍是基于现有 `recentEvents` / `recentMessages` 的轻量合成，不是完整多步执行历史
+- 当前 timeline 已切到 runtime `historyEntries` 预览，但默认只展示最近关键阶段，还没有完整展开、筛选和跨重启持久化
 - macOS 自动化权限仍需要用户在系统弹窗或“隐私与安全性 -> 自动化”中手动允许，应用无法静默代授
 - transcript fallback 目前仍是保守启发式，需要至少命中 `Claude Code v` 这类头部信号和额外上下文信号，避免普通文本误判
 
@@ -69,6 +76,24 @@
 - `MacIrlandTests/AppLaunchSupportTests.swift`
 - `MacIrlandTests/UIDisplayFormattingTests.swift`
 - `docs/guides/github-ssh-push.md`：GitHub SSH 推送配置与排障指引；如果需要让 Claude Code 处理 SSH key、切换 `origin`、或执行 SSH push，优先引用这份文档
+
+## GitHub 交付注意事项
+- 这台机器当前要通过本地 ClashX 代理访问 GitHub；macOS 系统代理虽然已开，但终端 / Claude Code 进程未必自动继承，所以出现过 `git push`、`git ls-remote`、`gh auth status`、`curl https://api.github.com` 全都失败的情况。
+- 已验证真正生效的方案不是继续折腾 SSH-over-443，而是先让 shell 继承代理环境；当前本机已在 `~/.zshrc` 里加入：
+  - `export HTTPS_PROXY="http://127.0.0.1:7890"`
+  - `export HTTP_PROXY="http://127.0.0.1:7890"`
+  - `export ALL_PROXY="socks5://127.0.0.1:7890"`
+- 如果 Claude Code / Terminal 反馈无法连接 GitHub，优先执行：
+  - `source ~/.zshrc`
+  - `git ls-remote origin HEAD`
+  - `gh auth status`
+  - `curl -I https://api.github.com`
+- 当前仓库的 `origin` 现在可以稳定使用 HTTPS；在代理环境生效后，plain `git push` 已验证可用，不需要额外改 SSH 配置。
+- 本仓库这次实际跑通 GitHub 交付时用到的关键命令是：
+  - `source ~/.zshrc`
+  - `git push origin feature/runtime-timeline-history`
+  - `gh pr create --base scaffold-macos-app --head feature/runtime-timeline-history --title "Refine MacIrland runtime history timeline" --body-file /tmp/macirland-pr.md`
+- 已验证这条路径可完成推送与建 PR；对应 PR 为 [#1](https://github.com/JuanWithJunJie/ai-dynamic-island/pull/1)。
 
 ## 本次修改（2026-04-06）
 - 修改 1：新增 `MacIrlandApp/App/LaunchSupport.swift`，集中处理启动方式识别和错误启动提示文案。
@@ -98,7 +123,7 @@
 - 结果 2：用户即使用对启动方式，在菜单栏里也更容易识别该应用入口；入口现在是更接近参考图 1 的胶囊状态块，而不只是普通图标或文字。
 - 结果 3：主浮动面板已从“开发中工具面板”明显推进到“深色悬浮工作台”风格，顶部品牌区、卡片容器、chips/tag 和 feed 式 session row 都已落下第一版。
 - 结果 4：本轮运行态验证已确认：`./Scripts/run-dev-app.sh` 可启动 `.app`，菜单栏项可点击，浮动面板仍可正常展开。
-- 结果 5：详情区已不再只是静态分组块，而是会根据状态给出更明确的当前操作提示，并把最近事件和消息按时间倒序合成为统一 timeline。
+- 结果 5：详情区已不再只是静态分组块，而是会根据状态给出更明确的当前操作提示，并直接消费 runtime history 作为统一 timeline。
 - 结果 6：在这一版基础上又进一步去掉了最重的“卡中卡”视觉问题：session detail 改成统一工作区，overview 与 diagnostics 也降成更轻的辅助层级。
 - 结果 7：菜单栏入口在极简化后又根据实机体验做了可见性回调：现在比纯透明胶囊更容易被用户在顶部状态栏里快速发现。
 - 结果 8：在刘海屏场景下，菜单栏入口已进一步改成更宽的 `icon + MI + count` 方案；这一轮优先解决“找不到入口”，而不是继续追求最小视觉体积。
@@ -118,4 +143,41 @@
 - 结果 22：本轮 runtime history 相关验证已通过：`swift test --filter TaskStateStoreTests`、`swift test --filter UIDisplayFormattingTests`、`swift test`、`swift build` 全部成功。
 
 ## 下一步建议
-如果继续沿着 `2026-04-06-ui-reference-alignment.md` 往下推进，下一刀更值得做的是：把 timeline 从“最近消息 + 最近事件”扩成更完整的任务历史，并补上更强的视觉层次或细微动效；本轮先不做真实 reply bridge、不做 Codex/Gemini 全量真实接入。
+如果继续沿着 `2026-04-06-ui-reference-alignment.md` 往下推进，下一刀更值得做的是：把当前”最近关键阶段”预览扩成可展开的完整历史，并补上更强的视觉层次或细微动效；本轮先不做真实 reply bridge、不做 Codex/Gemini 全量真实接入。
+
+## 本次修改（2026-04-09）
+- 修改 1：新增 `MacIrlandKit/Features/Island/IslandPresentation.swift`，新增 `CompactIslandPresentation` 结构体，提供 island compact 态的 statusText、countText、accessibilityLabel、accentColor 映射。
+- 修改 2：新增 `MacIrlandKit/Features/Island/IslandStatusStripView.swift`，实现顶部 compact island SwiftUI 界面：图标 + 状态词 + 会话数，点击后触发回调。
+- 修改 3：新增 `MacIrlandApp/App/IslandCoordinator.swift`，实现顶部悬浮 NSPanel 窗口管理：置顶居中、无阴影、跨 Space 驻留，并通过 `withObservationTracking` 监听 store 变化动态刷新 island 内容。
+- 修改 4：更新 `MacIrlandApp/App/AppDelegate.swift`，在 launch-mode guard 之后实例化 `islandCoordinator`，并把点击行为路由到 `panelCoordinator.showPanel()`。
+- 修改 5：更新 `MacIrlandApp/App/PanelCoordinator.swift`，新增 `showPanel()` 方法供 island 点击调用。
+- 修改 6：更新 `MacIrlandApp/App/StatusBarController.swift`，把 tooltip 更新为”顶部状态条可直接打开主面板”，说明 menu bar 已降为 fallback。
+- 修改 7：更新 `MacIrlandKit/DesignSystem/PanelTheme.swift`，新增 `islandSurface = Color.black.opacity(0.94)` 共享 token。
+- 修改 8：更新 `MacIrlandTests/UIDisplayFormattingTests.swift`，新增 `CompactIslandPresentation` 相关测试，覆盖空闲/等待处理/运行中状态词、countText 格式、accessibilityLabel 内容和 accentColor 映射。
+- 修改 9：更新 `MacIrlandTests/AppLaunchSupportTests.swift`，新增 island coordinator 持有性、`showPanel()` 暴露、窗口顶部居中定位、store 观察追踪、tap 路由到 panel 等源码级测试。
+
+## 本次结果（2026-04-09）
+- 结果 1：MacIrland 现在拥有顶部持续可读的第一信息层：compact island 默认显示图标、状态词和会话数，用户无需打开 panel 也能感知当前是否有任务在工作。
+- 结果 2：点击 island 后会通过 `showPanel()` 打开主 panel，panel 继续作为二级详情处理空间。
+- 结果 3：menu bar 和 Dock 入口仍然保留作为 fallback，用户即使找不到 island 也能通过传统方式进入应用。
+- 结果 4：island 跟随 store 变化自动刷新内容（通过 `withObservationTracking`），状态词会根据 attention/running/completed 优先级自动切换。
+- 结果 5：本轮 Phase 1 只交付 compact island 形态，未实现 expanded single-task card、复杂动效或 reply bridge 改动。
+- 结果 6：相关逻辑已有单元测试覆盖；验证命令为 `swift test --filter UIDisplayFormattingTests`、`swift test --filter AppLaunchSupportTests`、`swift test`、`swift build` 全部通过。
+
+## 本次修改（2026-04-09 Phase 2）
+- 修改 1：更新 `MacIrlandKit/Features/Island/IslandPresentation.swift`，新增 `HighlightedIslandPresentation` 结构体，为高优先级会话提供 titleText、summaryText、sourceText、timeText、accentColor 等展开卡片内容。
+- 修改 2：新增 `MacIrlandKit/Features/Island/IslandExpandedCardView.swift`，实现单任务展开卡片 UI：左侧图标 + 标题 + 摘要，右侧来源标签 + 时间，右上角 chrome controls（声音、设置、关闭），860×152 圆角胶囊。
+- 修改 3：新增 `MacIrlandKit/Features/Island/IslandSurfaceView.swift`，通过 `IslandSurfaceMode` enum（`.compact` / `.highlighted`）在 compact strip 和 expanded card 之间切换。
+- 修改 4：更新 `MacIrlandApp/App/IslandCoordinator.swift`，新增 `IslandSurfaceMode` 状态、`dismissedHighlightedSessionID` 记忆、`recomputeMode()` 动态切换 compact/highlighted 并调整窗口尺寸（520×44 ↔ 860×152）、`dismissHighlight()` 关闭高亮、`openPanel()` 打开 panel 并清除记忆。
+- 修改 5：更新 `MacIrlandApp/App/StatusBarController.swift`，tooltip 补充说明”顶部 island 会在高优先级会话时展开，菜单栏入口仍可作为 fallback”。
+- 修改 6：更新 `MacIrlandKit/DesignSystem/PanelTheme.swift`，新增 `islandChrome` 和 `islandSubtleBorder` 共享 token。
+- 修改 7：更新 `MacIrlandTests/UIDisplayFormattingTests.swift`，新增 `HighlightedIslandPresentation` 相关测试，覆盖等待会话内容复制、非 attention 会话返回 nil、时间文本、accessibilityLabel 和 accentColor。
+- 修改 8：更新 `MacIrlandTests/AppLaunchSupportTests.swift`，新增 coordinator 模式追踪、`dismissedHighlightedSessionID` 记忆、窗口尺寸切换、`IslandSurfaceView` 托管、menu bar fallback 说明等源码级测试。
+
+## 本次结果（2026-04-09 Phase 2）
+- 结果 1：MacIrland island 现已具备 compact + highlighted 双态：常态为 520×44 胶囊（图标 + 状态词 + 会话数），高优先级会话（waitingInput / failed / alert / replyAvailable / contextLost）自动扩展为 860×152 单任务卡。
+- 结果 2：expanded card 保持”单任务 + 大留白”结构，不包含快速动作按钮或自由输入。
+- 结果 3：用户关闭 expanded card 后，同一会话不会自动再次展开（通过 `dismissedHighlightedSessionID` 记忆），直到 top session 变化或用户重新触发。
+- 结果 4：点击 expanded card 内容区会打开主 panel，并清除 dismissed 记忆以便下次正常响应。
+- 结果 5：expanded card 右上角保留声音和设置图标，与内容层保持分离。
+- 结果 6：相关逻辑已有单元测试覆盖；验证命令为 `swift test --filter UIDisplayFormattingTests`、`swift test --filter AppLaunchSupportTests`、`swift test`、`swift build` 全部通过。
