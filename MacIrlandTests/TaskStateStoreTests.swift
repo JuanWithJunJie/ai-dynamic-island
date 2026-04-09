@@ -856,6 +856,36 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertTrue(service.latestEvents().isEmpty)
     }
 
+    func testPerformQuickActionStillAppendsHistoryForRecommendedIslandAction() {
+        let replyBridge = ConfigurableReplyBridge(
+            sendResult: ReplyValidationResult(canSend: true, explanation: "Sent quick action")
+        )
+        let store = TaskStateStore(
+            observationService: StubObservationService(
+                events: [
+                    RawCLIEvent(
+                        cliKind: .claudeCode,
+                        snippet: "Please confirm to continue.",
+                        snapshot: TerminalObservationSnapshot(
+                            terminalAppIdentifier: "com.apple.Terminal",
+                            windowTitle: "Claude Code · island",
+                            commandLine: "claude",
+                            ttyIdentifier: "ttys040"
+                        )
+                    )
+                ],
+                diagnostics: .empty
+            ),
+            replyBridge: replyBridge
+        )
+
+        let session = try! XCTUnwrap(store.selectedSession)
+        let result = store.performQuickAction(.continueExecution, for: session)
+
+        XCTAssertTrue(result.canSend)
+        XCTAssertEqual(store.selectedSession?.historyEntries.last?.kind, .userQuickAction)
+    }
+
     private var prioritizedEvents: [RawCLIEvent] {
         [
             RawCLIEvent(
