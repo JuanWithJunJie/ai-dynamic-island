@@ -551,6 +551,24 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertTrue(source.contains("PanelCard(tone: .subdued, padding: 16)"))
     }
 
+    func testDiagnosticsSummaryStillUsesBlockedExplanationWhenNeeded() {
+        let blocked = CapabilityStatus(
+            accessibilityGranted: true,
+            localOnlyProcessing: true,
+            explanation: "未授权自动化",
+            observationBlocked: true
+        )
+
+        XCTAssertEqual(blocked.panelDiagnosticsSummary, "终端读取失败，展开诊断查看权限或识别问题。")
+    }
+
+    @MainActor
+    func testPanelEmptyWorkspaceCopyDescribesSecondLayerRole() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("这里是 island 的二级详情层"))
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
