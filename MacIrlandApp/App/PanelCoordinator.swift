@@ -5,8 +5,10 @@ import MacIrlandKit
 @MainActor
 final class PanelCoordinator {
     private let panel: NSPanel
+    private let store: TaskStateStore
 
     init(store: TaskStateStore) {
+        self.store = store
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 820),
             styleMask: [.titled, .closable, .fullSizeContentView],
@@ -31,12 +33,23 @@ final class PanelCoordinator {
         self.panel = panel
     }
 
+    func showPanel() {
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
     func togglePanel() {
         if panel.isVisible {
             panel.orderOut(nil)
         } else {
-            NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
+            showPanel()
         }
+    }
+
+    func showPanelSelectingTopSession() {
+        if let topSession = store.topSession {
+            store.selectSession(topSession)
+        }
+        showPanel()
     }
 }

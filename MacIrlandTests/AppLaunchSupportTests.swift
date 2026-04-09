@@ -52,7 +52,7 @@ final class AppLaunchSupportTests: XCTestCase {
     func testAppDelegateRoutesIslandTapToShowPanel() throws {
         let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("self.panelCoordinator.showPanel()"))
+        XCTAssertTrue(source.contains("self.panelCoordinator.showPanelSelectingTopSession()"))
     }
 
     func testAppDelegateOwnsIslandCoordinatorForTopLevelSurface() throws {
@@ -190,5 +190,17 @@ final class AppLaunchSupportTests: XCTestCase {
         let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
 
         XCTAssertTrue(source.contains("autoCollapseWorkItem?.cancel()"))
+    }
+
+    func testPanelCoordinatorExposesShowPanelFocusedOnTopSession() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("func showPanelSelectingTopSession()"))
+    }
+
+    func testAppDelegateRoutesIslandOpenThroughFocusedPanelPath() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("self.panelCoordinator.showPanelSelectingTopSession()"))
     }
 }

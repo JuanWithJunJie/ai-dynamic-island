@@ -11,6 +11,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private(set) lazy var panelCoordinator = PanelCoordinator(store: store)
+    private lazy var statusBarController = StatusBarController(store: store) {
+        self.panelCoordinator.togglePanel()
+    }
+    private lazy var islandCoordinator = IslandCoordinator(store: store) {
+        self.panelCoordinator.showPanelSelectingTopSession()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let launchMode = AppLaunchSupport.detectLaunchMode()
@@ -21,7 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        _ = statusBarController
+        _ = islandCoordinator
         openPanelIfRequested()
     }
 
