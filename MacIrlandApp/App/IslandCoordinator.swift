@@ -38,13 +38,15 @@ final class IslandCoordinator {
         observeStore()
     }
 
+    private let topAnchorInset: CGFloat = 1
+
     func layoutWindow() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let visibleFrame = screen.visibleFrame
+        let screenFrame = screen.frame
         let size = window.frame.size
         let origin = NSPoint(
-            x: visibleFrame.midX - (size.width / 2),
-            y: visibleFrame.maxY - size.height - 6
+            x: screenFrame.midX - (size.width / 2),
+            y: screenFrame.maxY - size.height - topAnchorInset
         )
         window.setFrameOrigin(origin)
     }

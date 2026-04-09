@@ -70,8 +70,8 @@ final class AppLaunchSupportTests: XCTestCase {
     func testIslandCoordinatorAnchorsWindowNearTopCenter() throws {
         let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("visibleFrame.midX"))
-        XCTAssertTrue(source.contains("visibleFrame.maxY"))
+        XCTAssertTrue(source.contains("screenFrame.midX"))
+        XCTAssertTrue(source.contains("screenFrame.maxY"))
         XCTAssertTrue(source.contains("setFrameOrigin"))
     }
 
@@ -226,5 +226,18 @@ final class AppLaunchSupportTests: XCTestCase {
         let source = try String(contentsOfFile: "MacIrlandApp/App/SettingsView.swift", encoding: .utf8)
 
         XCTAssertFalse(source.contains("刷新状态"))
+    }
+
+    func testIslandCoordinatorAnchorsAgainstFullScreenFrame() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("screen.frame"))
+        XCTAssertFalse(source.contains("visibleFrame.midX"))
+    }
+
+    func testIslandCoordinatorDefinesSmallTopAnchorInset() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("topAnchorInset"))
     }
 }
