@@ -538,6 +538,19 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertEqual(session.compactSessionSubtitle, "等待你确认、补充信息或继续执行。")
     }
 
+    func testCompactSessionSubtitleStillDrivesSessionListCopy() {
+        let session = makeSession(status: .running)
+
+        XCTAssertEqual(session.compactSessionSubtitle, "Refreshing the panel UI.")
+    }
+
+    @MainActor
+    func testPanelUsesSubduedCardToneForSessionList() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("PanelCard(tone: .subdued, padding: 16)"))
+    }
+
     private func makeSession(
         status: TaskStatus = .running,
         terminalAppIdentifier: String = "com.apple.Terminal",
