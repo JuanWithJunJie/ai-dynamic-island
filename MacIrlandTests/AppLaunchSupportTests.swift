@@ -146,4 +146,16 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertTrue(source.contains("store.performQuickAction"))
     }
+
+    func testIslandExpandedCardDoesNotEmbedTextField() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("TextField("))
+    }
+
+    func testIslandExpandedCardDoesNotRenderMultipleActionButtons() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("ForEach("))
+    }
 }
