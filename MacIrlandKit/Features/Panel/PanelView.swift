@@ -20,16 +20,15 @@ public struct PanelView: View {
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
                     PanelHeaderView(
                         summary: viewModel.summary,
                         topSession: viewModel.topSession,
-                        capabilityStatus: viewModel.capabilityStatus,
-                        onRefresh: refresh
+                        capabilityStatus: viewModel.capabilityStatus
                     )
 
                     if let session = viewModel.selectedSession {
-                        PanelCard(tone: .elevated, padding: 20) {
+                        PanelCard(tone: .elevated, padding: 16) {
                             SessionDetailView(
                                 viewModel: viewModel,
                                 session: session,
@@ -37,7 +36,7 @@ public struct PanelView: View {
                             )
                         }
                     } else {
-                        PanelCard(tone: .elevated, padding: 20) {
+                        PanelCard(tone: .elevated, padding: 16) {
                             EmptyWorkspaceView(
                                 summary: viewModel.summary,
                                 topSession: viewModel.topSession,
@@ -46,7 +45,7 @@ public struct PanelView: View {
                         }
                     }
 
-                    PanelCard(tone: .subdued, padding: 16) {
+                    PanelCard(tone: .subdued, padding: 14) {
                         SessionPickerView(
                             sessions: viewModel.sessions,
                             selectedSessionID: viewModel.selectedSessionID,
@@ -55,7 +54,7 @@ public struct PanelView: View {
                         )
                     }
 
-                    PanelCard(tone: .subdued, padding: 16) {
+                    PanelCard(tone: .subdued, padding: 14) {
                         DiagnosticsDisclosureView(
                             isExpanded: $diagnosticsExpanded,
                             session: viewModel.selectedSession,
@@ -64,10 +63,10 @@ public struct PanelView: View {
                         )
                     }
                 }
-                .padding(24)
+                .padding(18)
             }
         }
-        .frame(minWidth: 760, minHeight: 820)
+        .frame(minWidth: 640, minHeight: 560)
         .onChange(of: viewModel.capabilityStatus.observationBlocked) { _, isBlocked in
             if isBlocked {
                 diagnosticsExpanded = true
@@ -80,16 +79,9 @@ public struct PanelView: View {
         lastActionResult = nil
     }
 
-    private func refresh() {
-        viewModel.refresh()
-        if viewModel.selectedSession == nil {
-            lastActionResult = nil
-        }
-    }
-
     private var sessionEmptyStateMessage: String {
         if viewModel.capabilityStatus.observationBlocked {
-            return "当前没有成功读取到 Claude Code 会话。请确认 Terminal / iTerm 自动化权限已授权，然后点击右上角刷新重试。"
+            return "当前没有成功读取到 Claude Code 会话。请确认 Terminal / iTerm 自动化权限已授权，系统会在下一轮自动刷新时重试。"
         }
 
         if viewModel.observationDiagnostics.sessions.contains(where: { $0.recognizedCLIKind == nil }) {
@@ -104,13 +96,12 @@ private struct PanelHeaderView: View {
     let summary: AppTaskSummary
     let topSession: TaskSession?
     let capabilityStatus: CapabilityStatus
-    let onRefresh: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("MacIrland")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
 
                 Text(topSession?.compactSessionSubtitle ?? "这里是 island 的二级详情层，用来继续处理当前会话。")
@@ -120,16 +111,6 @@ private struct PanelHeaderView: View {
             }
 
             Spacer()
-
-            Button(action: onRefresh) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 34, height: 34)
-                    .background(MacIrlandPalette.surfaceMuted, in: Circle())
-                    .overlay(Circle().strokeBorder(MacIrlandPalette.border, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
         }
     }
 }

@@ -10,7 +10,7 @@ final class PanelCoordinator {
     init(store: TaskStateStore) {
         self.store = store
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 560),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -49,6 +49,15 @@ final class PanelCoordinator {
     func showPanelSelectingTopSession() {
         if let topSession = store.topSession {
             store.selectSession(topSession)
+        }
+        showPanel()
+    }
+
+    func showPanelSelectingSession(id: TaskSession.ID?) {
+        if let id {
+            store.selectSession(id: id)
+        } else {
+            store.selectSession(id: nil)
         }
         showPanel()
     }

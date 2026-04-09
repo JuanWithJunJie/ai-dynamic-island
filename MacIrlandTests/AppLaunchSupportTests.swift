@@ -240,4 +240,24 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertTrue(source.contains("topAnchorInset"))
     }
+
+    func testPanelCoordinatorUsesCompactDetailSheetSize() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("width: 640"))
+        XCTAssertTrue(source.contains("height: 560"))
+    }
+
+    func testPanelHeaderNoLongerRendersRefreshButton() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("arrow.clockwise"))
+        XCTAssertFalse(source.contains("onRefresh"))
+    }
+
+    func testBlockedEmptyStateNoLongerReferencesManualRefresh() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
+
+        XCTAssertFalse(source.contains("点击右上角刷新"))
+    }
 }
