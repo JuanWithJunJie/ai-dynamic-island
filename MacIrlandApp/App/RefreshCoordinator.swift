@@ -6,6 +6,7 @@ final class RefreshCoordinator {
     private let store: TaskStateStore
     private let interval: TimeInterval
     private var timer: Timer?
+    private var isRefreshing = false
 
     init(store: TaskStateStore, interval: TimeInterval = 1.0) {
         self.store = store
@@ -16,7 +17,10 @@ final class RefreshCoordinator {
         stop()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.store.refresh()
+                guard let self, self.isRefreshing == false else { return }
+                self.isRefreshing = true
+                defer { self.isRefreshing = false }
+                self.store.refresh()
             }
         }
         timer?.tolerance = 0.2

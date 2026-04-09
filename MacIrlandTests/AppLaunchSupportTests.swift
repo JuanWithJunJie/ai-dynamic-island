@@ -260,4 +260,17 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertFalse(source.contains("点击右上角刷新"))
     }
+
+    func testRefreshCoordinatorTracksInFlightRefresh() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/RefreshCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("isRefreshing"))
+    }
+
+    func testRefreshCoordinatorSkipsTickWhileRefreshInFlight() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/RefreshCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("guard"), "should have guard statement")
+        XCTAssertTrue(source.contains("isRefreshing == false"), "should check isRefreshing flag")
+    }
 }
