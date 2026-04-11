@@ -368,7 +368,7 @@ public final class TaskStateStore {
             id: updatedSession.id,
             identity: updatedSession.identity,
             title: updatedSession.title,
-            status: updatedSession.status,
+            status: newStatus,
             priority: updatedSession.priority,
             confidence: updatedSession.confidence,
             summary: updatedSession.summary,

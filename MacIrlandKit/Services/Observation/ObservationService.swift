@@ -547,24 +547,10 @@ enum ClaudeStatusJudge {
     }
 
     private static func normalizedSessionSnippetJudgement(for text: String) -> ClaudeStatusJudgement? {
-        if text.hasPrefix("context lost in claude code terminal session:") {
-            return ClaudeStatusJudgement(status: .contextLost, confidence: 0.9, matchedSignals: 1, dominantReason: "normalized context-lost snippet")
-        }
-        if text.hasPrefix("failed claude code terminal session:") {
-            return ClaudeStatusJudgement(status: .failed, confidence: 0.9, matchedSignals: 1, dominantReason: "normalized failed snippet")
-        }
-        if text.hasPrefix("alert in claude code terminal session:") {
-            return ClaudeStatusJudgement(status: .alert, confidence: 0.88, matchedSignals: 1, dominantReason: "normalized alert snippet")
-        }
-        if text.hasPrefix("waiting for input in claude code terminal session:") {
-            return ClaudeStatusJudgement(status: .waitingInput, confidence: 0.88, matchedSignals: 1, dominantReason: "normalized waiting snippet")
-        }
-        if text.hasPrefix("completed claude code terminal session:") {
-            return ClaudeStatusJudgement(status: .completed, confidence: 0.88, matchedSignals: 1, dominantReason: "normalized completed snippet")
-        }
-        if text.hasPrefix("running claude code terminal session:") {
-            return ClaudeStatusJudgement(status: .running, confidence: 0.72, matchedSignals: 1, dominantReason: "normalized running snippet")
-        }
+        // These prefix checks were removed because they matched the output of
+        // snippet(for:), creating circular feedback loops where a session's own
+        // summary text re-triggered the same status. Real terminal session states
+        // are correctly classified by the scoring system below.
         return nil
     }
 

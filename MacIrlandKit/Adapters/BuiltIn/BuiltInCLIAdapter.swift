@@ -178,6 +178,20 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             // that text IS the signal and must be passed to the judge.
             if transcriptWasEmpty {
                 let trimmed = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+                // If snippet matches the pre-formatted output of snippet(for: ...),
+                // it is already a status description produced by the observation
+                // pipeline. Re-judging it through judge() would create a circular
+                // feedback loop (the snippet format is derived from the status, and
+                // judge() would re-derive the same status from the snippet format).
+                // Extract the status directly from the snippet prefix instead.
+                if let status = Self.statusFromSnippetFormat(trimmed) {
+                    return ClaudeStatusJudgement(
+                        status: status,
+                        confidence: 0.88,
+                        matchedSignals: 1,
+                        dominantReason: "pre-formatted snippet, status extracted from prefix"
+                    )
+                }
                 if trimmed.isEmpty || trimmed == "❯" || trimmed == "❯ " {
                     return ClaudeStatusJudgement(
                         status: .completed,
@@ -232,6 +246,19 @@ public struct BuiltInCLIAdapter: CLIAdapter {
                 channelStatus: "unsupported-terminal"
             )
         }
+    }
+
+    /// Extracts TaskStatus from the pre-formatted snippet produced by snippet(for: ...).
+    /// These snippets have the form "StatusText in Claude Code terminal session: title".
+    /// Returns nil if the snippet does not match this format.
+    private static func statusFromSnippetFormat(_ snippet: String) -> TaskStatus? {
+        let lowercased = snippet.lowercased()
+        if lowercased.hasPrefix("completed ") { return .completed }
+        if lowercased.hasPrefix("failed ") { return .failed }
+        if lowercased.hasPrefix("alert in ") { return .alert }
+        if lowercased.hasPrefix("waiting for input in ") { return .waitingInput }
+        if lowercased.hasPrefix("context lost in ") { return .contextLost }
+        return nil
     }
 
     private func replyChannelType(for terminalAppIdentifier: String) -> String {

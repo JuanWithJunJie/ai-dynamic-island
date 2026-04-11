@@ -1,38 +1,55 @@
-# AI Dynamic Island
+# MacIrland
 
-A native macOS SwiftUI + AppKit scaffold for an AI CLI task hub inspired by the project spec in `docs/superpowers/specs/2026-04-05-mac-ai-cli-dynamic-island-design.md`.
+macOS AI CLI 会话观察器。观察 Claude Code 在终端里的运行状态，以 island-first 界面的形式呈现。
 
-## Current status
+## 产品形态
 
-This repository currently contains the first MVP scaffold:
+- **Island 顶部状态层** — compact / hover expand / highlighted 三态，显示当前最高优先级会话
+- **Panel 详情层** — 点击 status bar 入口展开，展示会话列表、详情和回复能力
+- **Menu Bar / Dock** — island 不可见时的 fallback 入口
 
-- Swift Package based macOS app structure
-- `MacIrlandApp` executable target
-- `MacIrlandKit` shared domain/UI/services module
-- `MacIrlandTests` test target
-- mock adapters for Codex / Claude Code / Gemini CLI
-- normalized task/session models, state store, diagnostics and panel UI
-- status bar capsule prototype for a dynamic-island-like summary surface
-- dark floating panel prototype for richer task detail review
-- mock timeline refresh loop so summary state and top session change live in the prototype
+## 核心功能
 
-## Structure
+- 真实 observation：Hook socket server 接收 Claude Code 生命周期事件，AppleScript 读取 Terminal/iTerm2 transcript
+- 真实 reply bridge：通过 AppleScript 向 Claude Code 终端会话发送回复
+- 状态自动判断：基于 normalized transcript tail 的 signal scoring，识别 running / waitingInput / replyAvailable / completed / alert / failed 等状态
+- 声音反馈：Chiptune 音效（任务开始、等待回复、任务完成、失败告警），hover expand 面板可开关
+- 多会话支持：Claude Code 多 tab 同时运行时，hover expand 显示所有会话，点击跳转对应 Terminal tab
 
-- `MacIrlandApp/` — app lifecycle, AppKit bridge, status item, panel coordinator
-- `MacIrlandKit/` — core models, adapters, services, SwiftUI views, mock data
-- `MacIrlandTests/` — unit tests for aggregation and reply validation
-- `docs/` — product and requirements documentation
+## 技术栈
 
-## Notes
+- Swift + SwiftUI + AppKit
+- `@Observable` 状态管理
+- Unix socket IPC（Hook socket server）
+- AppleScript（Terminal.app / iTerm2 observation + reply）
+- AVFoundation（Chiptune 声音合成）
 
-Local verification is currently blocked by the machine's Apple developer toolchain setup:
+## 快速启动
 
-- `swift test` fails in the active CommandLineTools environment due to an `llbuild` runtime mismatch
-- `xcodebuild` is unavailable because full Xcode is not selected as the active developer directory
+```bash
+cd /Users/lijunjie/Documents/AIproject/macirland
+./Scripts/run-dev-app.sh
+```
 
-Once full Xcode is configured, the next steps are:
+## 验证
 
-1. run `swift test`
-2. optionally create/open an Xcode project or package workspace
-3. replace mock observation/reply services with real macOS integrations
-4. refine panel anchoring and animation to feel closer to a true dynamic-island interaction
+```bash
+swift build --package-path "/Users/lijunjie/Documents/AIproject/macirland"
+swift test --package-path "/Users/lijunjie/Documents/AIproject/macirland"
+```
+
+## 项目结构
+
+```
+MacIrlandApp/   — App lifecycle, IslandCoordinator, RefreshCoordinator, StatusBarController
+MacIrlandKit/   — Core models, adapters, services, SwiftUI views
+MacIrlandTests/ — Unit tests
+docs/           — Product specs and design docs
+Scripts/        — Hook installer, dev runner
+```
+
+## 当前限制
+
+- Observation 依赖 Terminal.app / iTerm2 的 accessibility 权限（需要用户手动在系统设置中授权）
+- Reply 草稿仅保存在当前 app 运行期
+- Codex / Gemini 为模拟链路，非真实 observation
