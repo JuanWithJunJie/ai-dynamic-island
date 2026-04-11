@@ -5,6 +5,7 @@ struct MenuBarStatusPresentation {
     let countText: String
     let accessibilityLabel: String
     let accentColor: Color
+    let animatedStatus: AnimatedStatus
 
     init(summary: AppTaskSummary, topSession: TaskSession?) {
         let attentionCount = summary.attentionCount
@@ -23,6 +24,14 @@ struct MenuBarStatusPresentation {
         }
 
         self.accentColor = topSession.map { IslandAccent.color(for: $0.status) } ?? .green
+
+        if summary.completedCount > 0 && summary.runningCount == 0 && attentionCount == 0 {
+            self.animatedStatus = .completed
+        } else if summary.runningCount > 0 {
+            self.animatedStatus = .running
+        } else {
+            self.animatedStatus = .idle
+        }
     }
 }
 
@@ -36,31 +45,56 @@ struct MenuBarStatusLabel: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: "terminal.fill")
-                .font(.system(size: 11, weight: .black))
-                .foregroundStyle(.white)
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(presentation.accentColor.opacity(0.94))
+
+                AnimatedStatusIcon(status: presentation.animatedStatus)
+            }
+            .frame(width: 18, height: 18)
 
             Text("MI")
-                .font(.system(size: 12, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white.opacity(0.96))
+                .font(.system(size: 12, weight: .black, design: .rounded))
+                .tracking(0.2)
+                .foregroundStyle(.white)
 
             Text(presentation.countText)
                 .font(.system(size: 12, weight: .heavy, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(presentation.accentColor)
-                .padding(.horizontal, 6)
+                .foregroundStyle(.white)
+                .frame(minWidth: 20)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 2)
-                .background(Color.white.opacity(0.12), in: Capsule())
+                .background(
+                    Capsule()
+                        .fill(presentation.accentColor.opacity(0.22))
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(presentation.accentColor.opacity(0.42), lineWidth: 1)
+                )
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 9)
-        .padding(.vertical, 4)
+        .frame(minWidth: 104, alignment: .leading)
+        .padding(.leading, 9)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4.5)
         .background(shellBackground, in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            presentation.accentColor.opacity(0.32),
+                            Color.white.opacity(0.10)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    lineWidth: 1
+                )
         )
-        .shadow(color: .black.opacity(0.22), radius: 4, y: 1)
+        .shadow(color: presentation.accentColor.opacity(0.20), radius: 8, y: 1)
+        .shadow(color: .black.opacity(0.24), radius: 4, y: 1)
         .accessibilityLabel(presentation.accessibilityLabel)
     }
 

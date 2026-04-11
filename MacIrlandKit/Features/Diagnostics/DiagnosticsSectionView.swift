@@ -4,11 +4,24 @@ public struct DiagnosticsSectionView: View {
     private let session: TaskSession?
     private let capabilityStatus: CapabilityStatus
     private let observationDiagnostics: ObservationDiagnostics
+    private let traySessionCount: Int
+    private let isTrayEligible: Bool
+    private let preferredIslandSessionStatus: TaskStatus?
 
-    public init(session: TaskSession?, capabilityStatus: CapabilityStatus, observationDiagnostics: ObservationDiagnostics) {
+    public init(
+        session: TaskSession?,
+        capabilityStatus: CapabilityStatus,
+        observationDiagnostics: ObservationDiagnostics,
+        traySessionCount: Int = 0,
+        isTrayEligible: Bool = false,
+        preferredIslandSessionStatus: TaskStatus? = nil
+    ) {
         self.session = session
         self.capabilityStatus = capabilityStatus
         self.observationDiagnostics = observationDiagnostics
+        self.traySessionCount = traySessionCount
+        self.isTrayEligible = isTrayEligible
+        self.preferredIslandSessionStatus = preferredIslandSessionStatus
     }
 
     public var body: some View {
@@ -67,6 +80,34 @@ public struct DiagnosticsSectionView: View {
                 Text("暂无可诊断的会话。")
                     .foregroundStyle(MacIrlandPalette.secondaryText)
             }
+
+            runtimeStateSection
+        }
+    }
+
+    private var runtimeStateSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PanelSectionHeader("运行态", subtitle: "tray / island 路由决策参考。")
+
+            HStack(spacing: 12) {
+                MetaChip(
+                    "tray \(traySessionCount)",
+                    systemImage: "rectangle.stack",
+                    tint: traySessionCount > 1 ? .green : .gray
+                )
+                MetaChip(
+                    isTrayEligible ? "tray 可见" : "compact",
+                    systemImage: isTrayEligible ? "checkmark.circle" : "minus.circle",
+                    tint: isTrayEligible ? .blue : .gray
+                )
+                if let status = preferredIslandSessionStatus {
+                    MetaChip(
+                        "island · \(status.label)",
+                        systemImage: "island",
+                        tint: .orange
+                    )
+                }
+            }
         }
     }
 
@@ -120,7 +161,17 @@ public struct DiagnosticsSectionView: View {
                     observationField("command", value: sessionDiagnostic.commandLine)
                     observationField("tty", value: sessionDiagnostic.ttyIdentifier ?? "(无 tty)")
                     observationField("reason", value: sessionDiagnostic.decisionReason)
-                    observationField("preview", value: sessionDiagnostic.transcriptPreview)
+                    observationField("raw preview", value: sessionDiagnostic.transcriptPreview)
+                    observationField("normalized preview", value: sessionDiagnostic.normalizedTranscriptPreview)
+                    if !sessionDiagnostic.normalizedTail.isEmpty {
+                        observationField("normalized tail", value: String(sessionDiagnostic.normalizedTail.prefix(200)))
+                    }
+                    if sessionDiagnostic.matchedSignals > 0 || sessionDiagnostic.confidence > 0 {
+                        HStack(spacing: 8) {
+                            MetaChip("\(sessionDiagnostic.matchedSignals) signals", systemImage: "antenna.radiowaves.left.and.right", tint: sessionDiagnostic.matchedSignals >= 2 ? .green : .gray)
+                            MetaChip("\(Int(sessionDiagnostic.confidence * 100))% conf", systemImage: "scope", tint: sessionDiagnostic.confidence >= 0.78 ? .blue : .gray)
+                        }
+                    }
                 }
                 .padding(.vertical, 8)
 

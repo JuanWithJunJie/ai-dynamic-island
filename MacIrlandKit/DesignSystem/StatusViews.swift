@@ -4,13 +4,13 @@ public enum IslandAccent {
     public static func color(for status: TaskStatus) -> Color {
         switch status {
         case .running:
-            return .blue
+            return .green
         case .waitingInput, .replyAvailable:
             return .orange
         case .alert, .failed:
             return .red
         case .completed:
-            return .green
+            return .orange
         case .contextLost:
             return .gray
         case .discovered, .recognizing:

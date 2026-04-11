@@ -13,32 +13,30 @@ public struct IslandStatusStripView: View {
         let presentation = CompactIslandPresentation(
             summary: store.summary,
             preferredSession: store.preferredIslandSession,
-            secondaryCount: store.secondaryIslandAttentionCount(excluding: store.preferredIslandSession?.id)
+            secondaryCount: store.secondaryIslandAttentionCount(excluding: store.preferredIslandSession?.id),
+            totalCountOverride: store.hoverExpandSessionCount
         )
 
+        let iconStatus: AnimatedStatus = store.preferredIslandSession?.status.animatedStatus ?? .idle
+
         Button(action: action) {
-            HStack(spacing: 10) {
-                StatusSpriteView(status: store.topSession?.status ?? .completed)
-                Text(presentation.statusText)
+            HStack(spacing: 8) {
+                AnimatedStatusIcon(status: iconStatus)
+                Spacer()
+                Text(presentation.countText)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
-                if let secondary = presentation.secondaryText {
-                    Text(secondary)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-                Spacer(minLength: 12)
-                Text(presentation.countText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.86))
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .frame(width: 520, alignment: .leading)
+            .frame(width: 300, alignment: .leading)
             .background(MacIrlandPalette.islandSurface, in: Capsule())
             .overlay(
                 Capsule()
-                    .strokeBorder(presentation.accentColor.opacity(0.28), lineWidth: 1)
+                    .strokeBorder(
+                        presentation.isAlert ? Color.red.opacity(0.5) : presentation.accentColor.opacity(0.28),
+                        lineWidth: presentation.isAlert ? 2 : 1
+                    )
             )
         }
         .buttonStyle(.plain)

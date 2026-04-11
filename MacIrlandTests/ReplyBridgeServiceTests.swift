@@ -73,6 +73,64 @@ final class ReplyBridgeServiceTests: XCTestCase {
         XCTAssertEqual(result.explanation, "目标 Claude Code 会话已变化或不存在，请刷新后重试。")
     }
 
+    func testValidateReplyRejectsUnavailableCapability() {
+        let service = MockReplyBridgeService()
+        let unavailableCapability = ReplyCapability(
+            status: .unavailable,
+            reason: "终端自动化权限未授权，请检查系统设置。",
+            targetDescription: "Claude Code",
+            channelStatus: "applescript-terminal"
+        )
+
+        let result = service.validateReply(for: makeSession(replyCapability: unavailableCapability), message: "continue")
+
+        XCTAssertFalse(result.canSend)
+        XCTAssertEqual(result.explanation, "终端自动化权限未授权，请检查系统设置。")
+    }
+
+    func testValidateReplyRejectsEmptyWindowIdentifier() {
+        let service = MockReplyBridgeService()
+        let sessionWithEmptyWindowID = TaskSession(
+            identity: SessionIdentity(
+                cliKind: .claudeCode,
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowIdentifier: "",
+                commandLine: "",
+                ttyIdentifier: "ttys031",
+                startedAt: Date(timeIntervalSince1970: 0),
+                lastSeenAt: Date(timeIntervalSince1970: 0)
+            ),
+            title: "Reply target",
+            status: .replyAvailable,
+            priority: 100,
+            confidence: 0.92,
+            summary: "Waiting for reply",
+            bridgeTarget: BridgeTarget(
+                cliKind: .claudeCode,
+                sessionID: UUID(),
+                terminalContext: "Claude Code · reply",
+                channelType: "applescript-terminal",
+                displayName: "Claude Code · reply"
+            ),
+            replyCapability: ReplyCapability(
+                status: .available,
+                reason: "Claude Code reply bridge is ready.",
+                targetDescription: "Claude Code",
+                channelStatus: "applescript-terminal"
+            ),
+            lastActiveAt: Date(timeIntervalSince1970: 0),
+            evidence: [],
+            recentEvents: [],
+            recentMessages: [],
+            quickActions: [.continueExecution]
+        )
+
+        let result = service.validateReply(for: sessionWithEmptyWindowID, message: "continue")
+
+        XCTAssertFalse(result.canSend)
+        XCTAssertEqual(result.explanation, "目标 Claude Code 会话已变化或不存在，请刷新后重试。")
+    }
+
     private func makeSession(
         cliKind: CLIKind = .claudeCode,
         terminalAppIdentifier: String = "com.apple.Terminal",
@@ -82,6 +140,12 @@ final class ReplyBridgeServiceTests: XCTestCase {
             terminalContext: "Claude Code · reply",
             channelType: "applescript-terminal",
             displayName: "Claude Code · reply"
+        ),
+        replyCapability: ReplyCapability = ReplyCapability(
+            status: .available,
+            reason: "Claude Code reply bridge is ready.",
+            targetDescription: "Claude Code",
+            channelStatus: "applescript-terminal"
         )
     ) -> TaskSession {
         TaskSession(
@@ -89,6 +153,7 @@ final class ReplyBridgeServiceTests: XCTestCase {
                 cliKind: cliKind,
                 terminalAppIdentifier: terminalAppIdentifier,
                 windowIdentifier: "Claude Code · reply",
+                commandLine: "",
                 ttyIdentifier: "ttys031",
                 startedAt: Date(timeIntervalSince1970: 0),
                 lastSeenAt: Date(timeIntervalSince1970: 0)
@@ -99,12 +164,7 @@ final class ReplyBridgeServiceTests: XCTestCase {
             confidence: 0.92,
             summary: "Waiting for reply",
             bridgeTarget: bridgeTarget,
-            replyCapability: ReplyCapability(
-                status: .available,
-                reason: "Claude Code reply bridge is ready.",
-                targetDescription: "Claude Code",
-                channelStatus: "applescript-terminal"
-            ),
+            replyCapability: replyCapability,
             lastActiveAt: Date(timeIntervalSince1970: 0),
             evidence: [],
             recentEvents: [],

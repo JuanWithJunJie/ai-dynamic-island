@@ -12,7 +12,7 @@ public struct IslandCompactView: View {
             if let session {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 14) {
-                        StatusSpriteView(status: session.status)
+                        AnimatedStatusIcon(status: session.status.animatedStatus)
 
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .firstTextBaseline) {

@@ -11,6 +11,13 @@ public enum MacIrlandPalette {
     public static let subtleBorder = Color.white.opacity(0.05)
     public static let secondaryText = Color.white.opacity(0.68)
     public static let tertiaryText = Color.white.opacity(0.48)
+
+    // Mockup Option B colors
+    public static let mockupGreen = Color(red: 0.204, green: 0.780, blue: 0.349)
+    public static let mockupOrange = Color(red: 1.0, green: 0.584, blue: 0.0)
+    public static let mockupPanelBg = Color(red: 0.110, green: 0.110, blue: 0.118)
+    public static let mockupStatusStripBg = Color(red: 0.078, green: 0.078, blue: 0.086)
+    public static let mockupBlue = Color(red: 0.039, green: 0.518, blue: 1.0)
 }
 
 public extension MacIrlandPalette {

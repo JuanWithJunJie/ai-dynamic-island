@@ -2,7 +2,8 @@ import SwiftUI
 
 public enum IslandSurfaceMode: Equatable {
     case compact
-    case highlighted(HighlightedIslandPresentation)
+    case tray
+    case hoverExpand
 }
 
 public struct IslandSurfaceView: View {
@@ -10,23 +11,32 @@ public struct IslandSurfaceView: View {
     let mode: IslandSurfaceMode
     let actionResult: ReplyValidationResult?
     let openPanel: () -> Void
-    let triggerPrimaryAction: () -> Void
-    let dismissHighlight: () -> Void
+    let openPanelForSession: ((TaskSession.ID) -> Void)?
+    let onTrayHoverChanged: ((Bool) -> Void)?
+    let jumpToSession: ((TaskSession.ID) -> Void)?
+    let onHoverExpandHoverChanged: ((Bool) -> Void)?
+    let onHoverExpandContinue: (() -> Void)?
 
     public init(
         store: TaskStateStore,
         mode: IslandSurfaceMode,
         actionResult: ReplyValidationResult?,
         openPanel: @escaping () -> Void,
-        triggerPrimaryAction: @escaping () -> Void,
-        dismissHighlight: @escaping () -> Void
+        openPanelForSession: ((TaskSession.ID) -> Void)? = nil,
+        onTrayHoverChanged: ((Bool) -> Void)? = nil,
+        jumpToSession: ((TaskSession.ID) -> Void)? = nil,
+        onHoverExpandHoverChanged: ((Bool) -> Void)? = nil,
+        onHoverExpandContinue: (() -> Void)? = nil
     ) {
         self.store = store
         self.mode = mode
         self.actionResult = actionResult
         self.openPanel = openPanel
-        self.triggerPrimaryAction = triggerPrimaryAction
-        self.dismissHighlight = dismissHighlight
+        self.openPanelForSession = openPanelForSession
+        self.onTrayHoverChanged = onTrayHoverChanged
+        self.jumpToSession = jumpToSession
+        self.onHoverExpandHoverChanged = onHoverExpandHoverChanged
+        self.onHoverExpandContinue = onHoverExpandContinue
     }
 
     public var body: some View {
@@ -34,13 +44,29 @@ public struct IslandSurfaceView: View {
             switch mode {
             case .compact:
                 IslandStatusStripView(store: store, action: openPanel)
-            case .highlighted(let presentation):
-                IslandExpandedCardView(
-                    presentation: presentation,
-                    actionResult: actionResult,
-                    openPanel: openPanel,
-                    triggerPrimaryAction: triggerPrimaryAction,
-                    dismiss: dismissHighlight
+            case .tray:
+                IslandMultiSessionTrayView(
+                    store: store,
+                    onSessionSelected: { sessionID in
+                        openPanelForSession?(sessionID)
+                    },
+                    onHoverChanged: { isHovering in
+                        onTrayHoverChanged?(isHovering)
+                    }
+                )
+            case .hoverExpand:
+                IslandHoverExpandView(
+                    store: store,
+                    preferredSessionID: store.hoverExpandPrimarySession?.id,
+                    onJumpToSession: { sessionID in
+                        jumpToSession?(sessionID)
+                    },
+                    onHoverChanged: { isHovering in
+                        onHoverExpandHoverChanged?(isHovering)
+                    },
+                    onContinueAction: {
+                        onHoverExpandContinue?()
+                    }
                 )
             }
         }

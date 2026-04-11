@@ -32,9 +32,120 @@ struct ClaudeStatusJudgement: Sendable {
     let dominantReason: String
 }
 
+enum ClaudeTranscriptNormalizer {
+    static func normalize(_ transcript: String) -> String {
+        guard transcript.isEmpty == false else {
+            return ""
+        }
+
+        let unifiedNewlines = transcript
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let withoutANSI = strippingANSIEscapes(from: unifiedNewlines)
+        let withoutControls = String(
+            withoutANSI.unicodeScalars.filter { scalar in
+                switch scalar.value {
+                case 0x09, 0x0A:
+                    return true
+                case 0x20...0x7E, 0xA0...0x10FFFF:
+                    return true
+                default:
+                    return false
+                }
+            }
+        )
+
+        let normalizedLines = withoutControls
+            .components(separatedBy: .newlines)
+            .map(normalizeLine(_:))
+            .filter { line in
+                line.isEmpty == false && isDecorativeLine(line) == false
+            }
+
+        return normalizedLines.joined(separator: "\n")
+    }
+
+    static func normalizedTail(from transcript: String, maxLength: Int = 2400, maxLines: Int = 18) -> String {
+        let normalized = normalize(transcript)
+        guard normalized.isEmpty == false else {
+            return ""
+        }
+
+        let lines = normalized
+            .components(separatedBy: .newlines)
+            .filter { $0.isEmpty == false }
+        let recentLines = Array(lines.suffix(maxLines))
+        let recentText = recentLines.joined(separator: "\n")
+
+        guard recentText.count > maxLength else {
+            return recentText
+        }
+        return String(recentText.suffix(maxLength))
+    }
+
+    static func normalizedHead(from transcript: String, maxLength: Int = 2000) -> String {
+        let normalized = normalize(transcript)
+        guard normalized.count > maxLength else {
+            return normalized
+        }
+        return String(normalized.prefix(maxLength))
+    }
+
+    static func preview(for transcript: String, maxLength: Int = 180) -> String {
+        let normalized = normalize(transcript).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.isEmpty == false else {
+            return "(空 normalized transcript)"
+        }
+
+        if normalized.count > maxLength {
+            return String(normalized.prefix(maxLength)) + "…"
+        }
+        return normalized
+    }
+
+    private static func normalizeLine(_ line: String) -> String {
+        line.replacingOccurrences(
+            of: #"[ \t]+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isDecorativeLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == "❯" || trimmed == "claude>" || trimmed.hasSuffix("claude>") {
+            return false
+        }
+
+        let hasMeaningfulContent = line.unicodeScalars.contains { scalar in
+            CharacterSet.alphanumerics.contains(scalar) ||
+            CharacterSet(charactersIn: "\u{4E00}" ... "\u{9FFF}").contains(scalar)
+        }
+        return hasMeaningfulContent == false
+    }
+
+    private static func strippingANSIEscapes(from text: String) -> String {
+        let patterns = [
+            #"\u{001B}\[[0-?]*[ -/]*[@-~]"#,
+            #"\u{001B}\][^\u{0007}]*\u{0007}"#
+        ]
+
+        return patterns.reduce(text) { partial, pattern in
+            partial.replacingOccurrences(
+                of: pattern,
+                with: "",
+                options: .regularExpression
+            )
+        }
+    }
+}
+
 enum ClaudeStatusJudge {
     static func judge(transcript: String) -> ClaudeStatusJudgement {
-        let lowercased = transcript.lowercasedTail(maxLength: 2400)
+        let normalizedTail = ClaudeTranscriptNormalizer
+            .normalizedTail(from: transcript, maxLength: 2400)
+        let lowercased = normalizedTail.lowercased()
         guard !lowercased.isEmpty else {
             return ClaudeStatusJudgement(status: .running, confidence: 0.62, matchedSignals: 0, dominantReason: "empty transcript")
         }
@@ -91,26 +202,72 @@ enum ClaudeStatusJudge {
             strongSignals: [
                 "waiting for input",
                 "need user input",
-                "awaiting your confirmation"
+                "awaiting your confirmation",
+                "what's next",
+                "your turn",
+                "ready for your next",
+                "what would you like",
+                "let me know if",
+                "tell me if you want",
+                "anything else",
+                "what else",
+                "need anything else",
+                "if you need anything",
+                "如果你愿意，我可以继续",
+                "如果你愿意我可以继续",
+                "如果你需要的话告诉我",
+                "需要我继续的话",
+                "接下来你想让我",
+                "有什么可以帮你",
+                "还需要什么",
+                "还有什么需要",
+                "当前任务完成，请局座指示",
+                "请局座指示"
             ],
             mediumSignals: [
                 "please confirm",
                 "press enter",
                 "press return",
                 "approve?",
-                "confirm to continue"
+                "confirm to continue",
+                "let me know",
+                "tell me if",
+                "next step",
+                "ready for your",
+                "tell me what",
+                "you want me to",
+                "do you want me to",
+                "如果你愿意",
+                "如果需要的话",
+                "告诉我接下来",
+                "下一步想让我",
+                "当前任务完成"
             ],
             weakSignals: [
-                "y/n",
-                "yes/no",
                 "press any key",
-                "enter to continue"
+                "enter to continue",
+                "type y or n",
+                "输入 y 或 n"
             ],
             antiSignals: [
                 "i can confirm",
                 "can confirm",
                 "confirmed that",
-                "confirmation message"
+                "confirmation message",
+                "y/n:",
+                "yes/no:",
+                "i'm done",
+                "all done",
+                "done!",
+                "finished",
+                "completed",
+                "task completed",
+                "exited",
+                "goodbye",
+                "shell exited",
+                "process exited",
+                "that's all",
+                "all tasks completed"
             ]
         )
 
@@ -118,12 +275,31 @@ enum ClaudeStatusJudge {
             in: lowercased,
             strongSignals: [
                 "draft reply",
-                "reply available"
+                "reply available",
+                "if you want",
+                "feel free to ask",
+                "if you'd like",
+                "if you need",
+                "我可以帮",
+                "还有什么我可以帮",
+                "如果你愿意，我可以",
+                "如果你愿意我可以",
+                "需要的话我可以",
+                "还有什么要",
+                "do you have any"
             ],
             mediumSignals: [
                 "respond to continue",
                 "reply to continue",
-                "waiting for reply"
+                "waiting for reply",
+                "i can continue",
+                "i'm ready to continue",
+                "i'm prepared",
+                "i am prepared",
+                "ready to move on",
+                "when you're ready",
+                "ready",
+                "just let me know"
             ],
             weakSignals: [
                 "reply",
@@ -131,7 +307,18 @@ enum ClaudeStatusJudge {
             ],
             antiSignals: [
                 "reply capability",
-                "response time"
+                "response time",
+                "i'm done",
+                "all done",
+                "done!",
+                "finished",
+                "completed",
+                "task completed",
+                "exited",
+                "goodbye",
+                "shell exited",
+                "process exited",
+                "that's all"
             ]
         )
 
@@ -164,33 +351,112 @@ enum ClaudeStatusJudge {
                 "successfully completed",
                 "completed successfully",
                 "finished successfully",
-                "finished generating"
+                "finished generating",
+                "i'm done",
+                "all done",
+                "done! that's all",
+                "done!",
+                "all set",
+                "that's all for now",
+                "that's everything",
+                "you're all set",
+                "ready for the next one",
+                "created file:",
+                "created directory:",
+                "done! created",
+                "task completed",
+                "all tasks completed",
+                "tasks completed",
+                "completed tasks",
+                "no more tasks",
+                "finished all",
+                "exited",
+                "goodbye",
+                "process exited",
+                "shell exited"
             ],
             mediumSignals: [
-                "task complete",
-                "all set",
-                "done successfully"
+                "done successfully",
+                "i am done",
+                "wrapping up",
+                "all done.",
+                "done with it",
+                "done with this",
+                "文件已创建",
+                "已完成",
+                "generation complete",
+                "generation complete.",
+                "✓",
+                "jobs completed",
+                "tasks finished"
             ],
             weakSignals: [
                 "completed",
-                "finished"
+                "finished",
+                "done"
             ],
             antiSignals: [
                 "not done",
                 "not completed",
                 "not finished",
                 "unfinished",
-                "we are not done"
+                "we are not done",
+                "can't be done",
+                "still running",
+                "in progress"
             ]
         )
+
+        let hasActiveProgressSignal =
+            lowercased.contains("thundering") ||
+            lowercased.contains("(thinking)") ||
+            lowercased.contains("thinking through") ||
+            lowercased.contains("working through") ||
+            lowercased.contains("analyzing") ||
+            lowercased.contains("implementing") ||
+            lowercased.contains("processing current") ||
+            lowercased.contains("processing...")
+
+        if let promptReturnJudgement = promptReturnJudgement(
+            normalizedTail: normalizedTail,
+            waitingInputScore: waitingInputScore,
+            replyAvailableScore: replyAvailableScore,
+            completedScore: completedScore
+        ) {
+            return promptReturnJudgement
+        }
+
+        // Special case: if completed has a strong signal AND waitingInput does NOT have a strong signal,
+        // completed should win. This handles "All done! What's next?" where both completion and
+        // "what's next" signals fire, but completion should win because waitingInput's
+        // "what's next" is just conversational after task completion.
+        // However, if waitingInput also has a strong signal (e.g., "Anything else?"), let the
+        // candidates loop decide which is more dominant.
+        if completedScore.hasStrongSignal && !waitingInputScore.hasStrongSignal && qualifies(signal: completedScore, for: .completed) {
+            return ClaudeStatusJudgement(
+                status: .completed,
+                confidence: confidence(for: .completed, signal: completedScore),
+                matchedSignals: completedScore.matchedSignals,
+                dominantReason: completedScore.dominantReason.isEmpty ? "strong completion signal" : completedScore.dominantReason
+            )
+        }
+
+        if hasActiveProgressSignal {
+            return ClaudeStatusJudgement(
+                status: .running,
+                confidence: 0.8,
+                matchedSignals: 1,
+                dominantReason: "active progress signal"
+            )
+        }
 
         let candidates: [(TaskStatus, SignalScore)] = [
             (.contextLost, contextLostScore),
             (.failed, failedScore),
             (.waitingInput, waitingInputScore),
-            (.replyAvailable, replyAvailableScore),
             (.alert, alertScore),
-            (.completed, completedScore)
+            (.completed, completedScore),
+            (.replyAvailable, replyAvailableScore)
         ]
 
         for (status, signal) in candidates {
@@ -274,7 +540,7 @@ enum ClaudeStatusJudge {
         case .contextLost, .failed:
             return signal.hasStrongSignal || signal.total >= 4
         case .waitingInput, .replyAvailable, .alert, .completed:
-            return signal.hasStrongSignal || signal.total >= 4 || (signal.hasMediumSignal && signal.matchedSignals >= 2)
+            return signal.hasStrongSignal || signal.total >= 3 || (signal.hasMediumSignal && signal.matchedSignals >= 2)
         default:
             return false
         }
@@ -300,6 +566,115 @@ enum ClaudeStatusJudge {
             return ClaudeStatusJudgement(status: .running, confidence: 0.72, matchedSignals: 1, dominantReason: "normalized running snippet")
         }
         return nil
+    }
+
+    private static func promptReturnJudgement(
+        normalizedTail: String,
+        waitingInputScore: SignalScore,
+        replyAvailableScore: SignalScore,
+        completedScore: SignalScore
+    ) -> ClaudeStatusJudgement? {
+        let lines = normalizedTail
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard let lastLine = lines.last, isClaudePromptLine(lastLine) else {
+            return nil
+        }
+
+        let contextLines = Array(lines.dropLast().suffix(4))
+        let contextText = contextLines.joined(separator: "\n")
+        let lowercasedContext = contextText.lowercased()
+
+        let hasCompletionMarker =
+            contextText.contains("✔") ||
+            contextText.contains("✓") ||
+            lowercasedContext.contains("已完成") ||
+            lowercasedContext.contains("created file:") ||
+            lowercasedContext.contains("created directory:") ||
+            lowercasedContext.contains("all done") ||
+            lowercasedContext.contains("done!") ||
+            lowercasedContext.contains("finished successfully")
+
+        let hasActiveProgress =
+            lowercasedContext.contains("working through") ||
+            lowercasedContext.contains("analyzing") ||
+            lowercasedContext.contains("implementing") ||
+            lowercasedContext.contains("processing") ||
+            lowercasedContext.contains("still running") ||
+            lowercasedContext.contains("in progress")
+
+        guard !hasActiveProgress else {
+            return nil
+        }
+
+        // Key distinction: if there's a completion marker AND a strong offer-to-continue signal,
+        // treat as replyAvailable/waitingInput (Claude is offering to do more).
+        // If there's a completion marker but no strong offer signal, treat as completed.
+        let hasOfferSignal = waitingInputScore.hasStrongSignal || replyAvailableScore.hasStrongSignal
+
+        if hasCompletionMarker {
+            if hasOfferSignal && (qualifies(signal: waitingInputScore, for: .waitingInput) || qualifies(signal: replyAvailableScore, for: .replyAvailable)) {
+                // Completion + strong offer → prefer the offer (replyAvailable/waitingInput)
+                if waitingInputScore.hasStrongSignal && qualifies(signal: waitingInputScore, for: .waitingInput) {
+                    return ClaudeStatusJudgement(
+                        status: .waitingInput,
+                        confidence: confidence(for: .waitingInput, signal: waitingInputScore),
+                        matchedSignals: waitingInputScore.matchedSignals,
+                        dominantReason: "prompt returned after waiting-input signal: \(waitingInputScore.dominantReason)"
+                    )
+                }
+                if qualifies(signal: replyAvailableScore, for: .replyAvailable) {
+                    return ClaudeStatusJudgement(
+                        status: .replyAvailable,
+                        confidence: confidence(for: .replyAvailable, signal: replyAvailableScore),
+                        matchedSignals: replyAvailableScore.matchedSignals,
+                        dominantReason: "prompt returned after reply-available signal: \(replyAvailableScore.dominantReason)"
+                    )
+                }
+            }
+            // Completion without strong offer → completed
+            return ClaudeStatusJudgement(
+                status: .completed,
+                confidence: max(0.82, confidence(for: .completed, signal: completedScore)),
+                matchedSignals: max(completedScore.matchedSignals, 1),
+                dominantReason: "prompt returned after completion marker"
+            )
+        }
+
+        if qualifies(signal: waitingInputScore, for: .waitingInput) {
+            return ClaudeStatusJudgement(
+                status: .waitingInput,
+                confidence: confidence(for: .waitingInput, signal: waitingInputScore),
+                matchedSignals: waitingInputScore.matchedSignals,
+                dominantReason: "prompt returned after waiting-input signal: \(waitingInputScore.dominantReason)"
+            )
+        }
+
+        if qualifies(signal: replyAvailableScore, for: .replyAvailable) {
+            return ClaudeStatusJudgement(
+                status: .replyAvailable,
+                confidence: confidence(for: .replyAvailable, signal: replyAvailableScore),
+                matchedSignals: replyAvailableScore.matchedSignals,
+                dominantReason: "prompt returned after reply-available signal: \(replyAvailableScore.dominantReason)"
+            )
+        }
+
+        return ClaudeStatusJudgement(
+            status: .waitingInput,
+            confidence: 0.74,
+            matchedSignals: 1,
+            dominantReason: "prompt returned without active progress"
+        )
+    }
+
+    private static func isClaudePromptLine(_ line: String) -> Bool {
+        let lowercased = line.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return lowercased == "claude>" ||
+            lowercased.hasSuffix("claude>") ||
+            lowercased == "❯" ||
+            lowercased.hasPrefix("❯ ")
     }
 
     private static func confidence(for status: TaskStatus, signal: SignalScore) -> Double {
@@ -403,6 +778,7 @@ public struct RealTerminalObservationService: ObservationProviding {
                     commandLine: observation.snapshot.commandLine,
                     ttyIdentifier: observation.snapshot.ttyIdentifier,
                     transcriptPreview: observation.transcriptPreview,
+                    normalizedTranscriptPreview: observation.normalizedTranscriptPreview,
                     recognizedCLIKind: nil,
                     inferredStatus: nil,
                     decisionReason: "未命中 Claude Code 识别规则"
@@ -410,10 +786,36 @@ public struct RealTerminalObservationService: ObservationProviding {
             )
         }
 
-        let status = inferredStatus(for: observation)
+        // Terminal.app can temporarily yield an empty transcript or incomplete process list
+        // even while Claude is still active, so avoid forcing a completed state here.
+        let transcriptEmpty = observation.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let judgement: ClaudeStatusJudgement
+        if cliKind == .claudeCode,
+           transcriptEmpty,
+           let isBusy = observation.snapshot.isBusy {
+            if isBusy {
+                judgement = ClaudeStatusJudgement(
+                    status: .running,
+                    confidence: 0.78,
+                    matchedSignals: 1,
+                    dominantReason: "terminal busy signal with empty transcript"
+                )
+            } else {
+                judgement = ClaudeStatusJudgement(
+                    status: .waitingInput,
+                    confidence: 0.8,
+                    matchedSignals: 1,
+                    dominantReason: "terminal idle signal with empty transcript"
+                )
+            }
+        } else {
+            judgement = ClaudeStatusJudge.judge(transcript: observation.transcript)
+        }
+        let status = judgement.status
         let event = RawCLIEvent(
             cliKind: cliKind,
             snippet: snippet(for: observation.snapshot, cliKind: cliKind, status: status),
+            transcript: observation.transcript,
             snapshot: observation.snapshot
         )
 
@@ -425,23 +827,23 @@ public struct RealTerminalObservationService: ObservationProviding {
                 commandLine: observation.snapshot.commandLine,
                 ttyIdentifier: observation.snapshot.ttyIdentifier,
                 transcriptPreview: observation.transcriptPreview,
+                normalizedTranscriptPreview: observation.normalizedTranscriptPreview,
                 recognizedCLIKind: cliKind,
                 inferredStatus: status,
-                decisionReason: "已识别并转成 \(cliKind.displayName) 事件"
+                decisionReason: "已识别并转成 \(cliKind.displayName) 事件 · \(judgement.dominantReason)",
+                matchedSignals: judgement.matchedSignals,
+                confidence: judgement.confidence,
+                normalizedTail: observation.normalizedTail
             )
         )
     }
 
     private static func recognizedCLIKind(for observation: ObservedTerminalSession) -> CLIKind? {
-        if ClaudeSnapshotMatcher.recognizes(snapshot: observation.snapshot, transcript: observation.transcript) {
+        if ClaudeSnapshotMatcher.recognizes(snapshot: observation.snapshot, transcript: observation.normalizedTranscript) {
             return .claudeCode
         }
 
         return nil
-    }
-
-    private static func inferredStatus(for observation: ObservedTerminalSession) -> TaskStatus {
-        ClaudeStatusJudge.judge(transcript: observation.transcript).status
     }
 
     private static func snippet(for snapshot: TerminalObservationSnapshot, cliKind: CLIKind, status: TaskStatus) -> String {
@@ -489,6 +891,18 @@ struct ObservedTerminalSession: Sendable {
             return String(trimmed.prefix(140)) + "…"
         }
         return trimmed
+    }
+
+    var normalizedTranscript: String {
+        ClaudeTranscriptNormalizer.normalize(transcript)
+    }
+
+    var normalizedTranscriptPreview: String {
+        ClaudeTranscriptNormalizer.preview(for: transcript)
+    }
+
+    var normalizedTail: String {
+        ClaudeTranscriptNormalizer.normalizedTail(from: transcript)
     }
 }
 
@@ -579,12 +993,21 @@ struct AppleTerminalReader: TerminalAppReading {
                     end try
                     try
                         set tabProcess to processes of eachTab as text
+                    on error
+                        set tabProcess to ""
                     end try
                     try
-                        set tabContents to contents of eachTab
+                        set tabContents to history of eachTab
+                    on error
+                        set tabContents to ""
                     end try
 
-                    set output to output & windowName & fieldDelimiter & tabTitle & fieldDelimiter & tabTTY & fieldDelimiter & tabProcess & fieldDelimiter & tabContents & recordDelimiter
+                    set tabBusy to ""
+                    try
+                        set tabBusy to busy of eachTab as text
+                    end try
+
+                    set output to output & windowName & fieldDelimiter & tabTitle & fieldDelimiter & tabTTY & fieldDelimiter & tabProcess & fieldDelimiter & tabBusy & fieldDelimiter & tabContents & fieldDelimiter & windowName & recordDelimiter
                 end repeat
             end repeat
             return output
@@ -665,7 +1088,7 @@ struct ITermReader: TerminalAppReading {
                             set sessionContents to contents of eachSession
                         end try
 
-                        set output to output & windowName & fieldDelimiter & sessionName & fieldDelimiter & sessionTTY & fieldDelimiter & sessionCommand & fieldDelimiter & sessionContents & recordDelimiter
+                        set output to output & windowName & fieldDelimiter & sessionName & fieldDelimiter & sessionTTY & fieldDelimiter & sessionCommand & fieldDelimiter & sessionContents & fieldDelimiter & windowName & recordDelimiter
                     end repeat
                 end repeat
             end repeat
@@ -707,6 +1130,10 @@ enum AppleScriptObservationParser {
             return []
         }
 
+        // Debug: log raw output to see observation format
+        let debugLog = "OBS_PARSE_OUTPUT:\n\(output)\n---END---\n"
+        try? debugLog.write(toFile: "/tmp/macirland-obs.log", atomically: true, encoding: .utf8)
+
         return output
             .components(separatedBy: recordSeparator)
             .compactMap { record in
@@ -723,6 +1150,22 @@ enum AppleScriptObservationParser {
                 let cleanedFields = fields.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 let windowTitle = cleanedFields[0].isEmpty ? cleanedFields[1] : cleanedFields[0]
                 let commandLine = cleanedFields[3]
+                let hasBusyField = fields.count >= 6
+                let busyField = hasBusyField ? cleanedFields[4] : ""
+                // New 7-field format (added windowName at end): transcript excludes the trailing windowName field
+                // Old 6-field format: transcript includes everything from field 5 onwards
+                let transcript: String
+                let fullWindowName: String
+                if fields.count >= 7 {
+                    // New format: last field is windowName, transcript is fields 5 onwards excluding last
+                    transcript = fields.dropFirst(5).dropLast().joined(separator: fieldSeparator)
+                    fullWindowName = cleanedFields[cleanedFields.count - 1]
+                } else {
+                    transcript = hasBusyField
+                        ? fields.dropFirst(5).joined(separator: fieldSeparator)
+                        : fields.dropFirst(4).joined(separator: fieldSeparator)
+                    fullWindowName = ""
+                }
 
                 guard !windowTitle.isEmpty || !commandLine.isEmpty else {
                     return nil
@@ -732,12 +1175,25 @@ enum AppleScriptObservationParser {
                     snapshot: TerminalObservationSnapshot(
                         terminalAppIdentifier: terminalAppIdentifier,
                         windowTitle: windowTitle,
+                        fullWindowName: fullWindowName,
                         commandLine: commandLine,
-                        ttyIdentifier: cleanedFields[2].nilIfEmpty
+                        ttyIdentifier: cleanedFields[2].nilIfEmpty,
+                        isBusy: parseBusyFlag(busyField)
                     ),
-                    transcript: fields.dropFirst(4).joined(separator: fieldSeparator)
+                    transcript: transcript
                 )
             }
+    }
+
+    private static func parseBusyFlag(_ value: String) -> Bool? {
+        switch value.lowercased() {
+        case "true":
+            return true
+        case "false":
+            return false
+        default:
+            return nil
+        }
     }
 }
 
@@ -783,7 +1239,9 @@ enum ClaudeSnapshotMatcher {
     }
 
     private static func recognizesTranscriptHeader(_ transcript: String) -> Bool {
-        let lowered = transcript.lowercasedHead(maxLength: 2000)
+        let lowered = ClaudeTranscriptNormalizer
+            .normalizedHead(from: transcript, maxLength: 2000)
+            .lowercased()
         guard lowered.isEmpty == false else {
             return false
         }
@@ -807,7 +1265,6 @@ enum ClaudeSnapshotMatcher {
 
         return strongCount >= 2 || (strongCount >= 1 && mediumCount >= 1)
     }
-
     private static func normalizedCommandLine(_ value: String) -> String {
         value
             .lowercased()
@@ -829,28 +1286,12 @@ enum ClaudeSnapshotMatcher {
     }
 }
 
-private extension String {
+extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
 
     func containsAny(of fragments: [String]) -> Bool {
         fragments.contains(where: contains)
-    }
-
-    func lowercasedTail(maxLength: Int) -> String {
-        let lowered = lowercased()
-        guard lowered.count > maxLength else {
-            return lowered
-        }
-        return String(lowered.suffix(maxLength))
-    }
-
-    func lowercasedHead(maxLength: Int) -> String {
-        let lowered = lowercased()
-        guard lowered.count > maxLength else {
-            return lowered
-        }
-        return String(lowered.prefix(maxLength))
     }
 }

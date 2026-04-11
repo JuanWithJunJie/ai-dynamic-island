@@ -42,13 +42,21 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             id: sessionID,
             cliKind: cliKind,
             terminalAppIdentifier: event.snapshot.terminalAppIdentifier,
-            windowIdentifier: event.snapshot.windowTitle,
+            windowIdentifier: event.snapshot.fullWindowName.isEmpty
+                ? event.snapshot.windowTitle
+                : event.snapshot.fullWindowName,
+            commandLine: event.snapshot.commandLine,
             ttyIdentifier: event.snapshot.ttyIdentifier,
             startedAt: event.timestamp.addingTimeInterval(-300),
             lastSeenAt: event.timestamp
         )
 
-        let judgement = judgement(for: event.snippet)
+        let transcriptWasEmpty = event.transcript.isEmpty
+        let judgement = judgement(
+            for: transcriptWasEmpty ? event.snippet : event.transcript,
+            transcriptWasEmpty: transcriptWasEmpty,
+            windowTitle: event.snapshot.windowTitle
+        )
         let sessionStatus = judgement.status
         let target = BridgeTarget(
             cliKind: cliKind,
@@ -102,40 +110,57 @@ public struct BuiltInCLIAdapter: CLIAdapter {
     }
 
     private func stableSessionID(for event: RawCLIEvent) -> UUID {
-        let identitySeed = [
-            cliKind.rawValue,
-            event.snapshot.terminalAppIdentifier,
-            event.snapshot.windowTitle,
-            event.snapshot.commandLine,
-            event.snapshot.ttyIdentifier ?? "no-tty"
-        ].joined(separator: "|")
+        let identitySeed: String
+        if let ttyIdentifier = event.snapshot.ttyIdentifier, ttyIdentifier.isEmpty == false {
+            // tty is the most stable live-session identifier across refreshes.
+            // Window title and command line often drift while the same Claude session
+            // is still running, which would otherwise create a new TaskSession.ID
+            // every tick and replay state-transition cues.
+            identitySeed = [
+                cliKind.rawValue,
+                event.snapshot.terminalAppIdentifier,
+                ttyIdentifier
+            ].joined(separator: "|")
+        } else {
+            identitySeed = [
+                cliKind.rawValue,
+                event.snapshot.terminalAppIdentifier,
+                event.snapshot.windowTitle,
+                event.snapshot.commandLine
+            ].joined(separator: "|")
+        }
 
         return UUID(uuidString: uuidString(from: identitySeed)) ?? UUID()
     }
 
     private func uuidString(from seed: String) -> String {
-        let bytes = Array(seed.utf8)
-        guard !bytes.isEmpty else {
-            return "00000000-0000-4000-8000-000000000000"
+        // Use full-seed hashing so that any difference in the seed (including
+        // different ttyIdentifier, windowTitle, or commandLine) produces a
+        // different UUID. The previous implementation used `bytes[index % n]`
+        // which only cycled through the first n bytes, causing all seeds with
+        // the same prefix (e.g., all claudeCode sessions starting with
+        // "claudeCode|com.apple.Terminal|...") to collide.
+        var hash: UInt64 = 0
+        for (index, scalar) in seed.unicodeScalars.enumerated() {
+            let byte = UInt8(scalar.value & 0xFF)
+            hash = hash &+ (UInt64(byte) &+ UInt64(index &* 31)) &<< (index % 8)
+            if index % 3 == 0 { hash ^= hash >> 17 }
+            if index % 5 == 0 { hash = hash &* 31 &+ 1 }
         }
-
+        let hashBytes = withUnsafeBytes(of: hash.bigEndian) { Array($0) }
         var uuidBytes = [UInt8](repeating: 0, count: 16)
-        for index in 0..<16 {
-            let byte = bytes[index % bytes.count]
-            let mixed = UInt8((index * 31) & 0xFF)
-            uuidBytes[index] = byte ^ mixed
+        for i in 0..<8 {
+            uuidBytes[i] = hashBytes[i] ^ UInt8(i &* 17 &+ 5)
+            uuidBytes[8 + i] = hashBytes[i] ^ UInt8(i &* 13 &+ 7)
         }
-
         uuidBytes[6] = (uuidBytes[6] & 0x0F) | 0x40
         uuidBytes[8] = (uuidBytes[8] & 0x3F) | 0x80
-
         return String(
             format: "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
             uuidBytes[0], uuidBytes[1], uuidBytes[2], uuidBytes[3],
-            uuidBytes[4], uuidBytes[5],
-            uuidBytes[6], uuidBytes[7],
-            uuidBytes[8], uuidBytes[9],
-            uuidBytes[10], uuidBytes[11], uuidBytes[12], uuidBytes[13], uuidBytes[14], uuidBytes[15]
+            uuidBytes[4], uuidBytes[5], uuidBytes[6], uuidBytes[7],
+            uuidBytes[8], uuidBytes[9], uuidBytes[10], uuidBytes[11],
+            uuidBytes[12], uuidBytes[13], uuidBytes[14], uuidBytes[15]
         ).lowercased()
     }
 
@@ -144,8 +169,24 @@ public struct BuiltInCLIAdapter: CLIAdapter {
         return prefix.isEmpty ? "未命名任务" : String(prefix.prefix(48))
     }
 
-    private func judgement(for snippet: String) -> ClaudeStatusJudgement {
+    private func judgement(for snippet: String, transcriptWasEmpty: Bool = false, windowTitle: String = "") -> ClaudeStatusJudgement {
         if cliKind == .claudeCode {
+            // When transcript is empty due to Terminal/iTerm2 privacy protection,
+            // we see nothing meaningful in snippet either. In that case, treat as
+            // completed since we can't observe any running state.
+            // But if snippet contains actual text (like "Anything else?"),
+            // that text IS the signal and must be passed to the judge.
+            if transcriptWasEmpty {
+                let trimmed = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed == "❯" || trimmed == "❯ " {
+                    return ClaudeStatusJudgement(
+                        status: .completed,
+                        confidence: 0.8,
+                        matchedSignals: 1,
+                        dominantReason: "empty transcript with privacy protection"
+                    )
+                }
+            }
             return ClaudeStatusJudge.judge(transcript: snippet)
         }
 
@@ -219,13 +260,13 @@ public struct BuiltInCLIAdapter: CLIAdapter {
         if lowercased.contains("alert") || lowercased.contains("warning:") || lowercased.contains("rate limit") || lowercased.contains("retrying") || lowercased.contains("interrupted") || lowercased.contains("throttled") {
             return .alert
         }
-        if lowercased.contains("waiting for input") || lowercased.contains("need user input") || lowercased.contains("please confirm") || lowercased.contains("press enter") || lowercased.contains("press return") || lowercased.contains("y/n") || lowercased.contains("yes/no") {
+        if lowercased.contains("waiting for input") || lowercased.contains("need user input") || lowercased.contains("please confirm") || lowercased.contains("press enter") || lowercased.contains("press return") || lowercased.contains("y/n") || lowercased.contains("yes/no") || lowercased.contains("let me know") || lowercased.contains("tell me if") || lowercased.contains("what's next") || lowercased.contains("next step") || lowercased.contains("your turn") || lowercased.contains("ready for your") || lowercased.contains("anything else") || lowercased.contains("what else") || lowercased.contains("need anything else") || lowercased.contains("还需要什么") || lowercased.contains("还有什么需要") || lowercased.contains("do you want me to") {
             return .waitingInput
         }
-        if lowercased.contains("reply") || lowercased.contains("respond") {
+        if lowercased.contains("reply") || lowercased.contains("respond") || lowercased.contains("if you want") || lowercased.contains("if you'd") || lowercased.contains("i can continue") || lowercased.contains("when you're ready") || lowercased.contains("feel free to ask") || lowercased.contains("just let me know") {
             return .replyAvailable
         }
-        if lowercased.hasPrefix("completed ") || lowercased.contains("task complete") || lowercased.contains("successfully completed") || lowercased.contains("completed successfully") || lowercased.contains("all set") || lowercased.contains("finished generating") || lowercased.contains("finished successfully") {
+        if lowercased.hasPrefix("completed ") || lowercased.contains("task complete") || lowercased.contains("successfully completed") || lowercased.contains("completed successfully") || lowercased.contains("all set") || lowercased.contains("finished generating") || lowercased.contains("finished successfully") || lowercased.contains("i'm done") || lowercased.contains("i am done") || lowercased.contains("that's all") || lowercased.contains("wrapping up") || lowercased.contains("created file:") || lowercased.contains("created directory:") {
             return .completed
         }
         return .running

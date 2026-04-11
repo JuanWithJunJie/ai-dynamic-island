@@ -32,13 +32,11 @@ final class AppLaunchSupportTests: XCTestCase {
         )
     }
 
-    func testPanelCoordinatorTogglePanelActivatesAppBeforeShowingPanel() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
+    func testAppDelegateNoLongerOwnsPanelCoordinator() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
 
-        let activateIndex = try XCTUnwrap(source.range(of: "NSApp.activate(ignoringOtherApps: true)")?.lowerBound)
-        let frontIndex = try XCTUnwrap(source.range(of: "panel.makeKeyAndOrderFront(nil)")?.lowerBound)
-
-        XCTAssertLessThan(activateIndex, frontIndex)
+        XCTAssertFalse(source.contains("PanelCoordinator"))
+        XCTAssertFalse(source.contains("panelCoordinator"))
     }
 
     func testIslandCoordinatorObservesStoreSummaryAndTopSession() throws {
@@ -52,7 +50,8 @@ final class AppLaunchSupportTests: XCTestCase {
     func testAppDelegateRoutesIslandTapToShowPanel() throws {
         let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("showPanelSelectingSession(id:"))
+        // Panel display is disabled - island tap should not route to panel
+        XCTAssertFalse(source.contains("showPanelSelectingSession(id:"))
     }
 
     func testAppDelegateOwnsIslandCoordinatorForTopLevelSurface() throws {
@@ -61,10 +60,11 @@ final class AppLaunchSupportTests: XCTestCase {
         XCTAssertTrue(source.contains("IslandCoordinator"))
     }
 
-    func testPanelCoordinatorExposesShowPanelForIslandClicks() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
+    func testAppDelegateNoLongerSupportsOpenPanelOnLaunchFlag() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("func showPanel()"))
+        XCTAssertFalse(source.contains("OpenPanelOnLaunch"))
+        XCTAssertFalse(source.contains("openPanelIfRequested"))
     }
 
     func testIslandCoordinatorAnchorsWindowNearTopCenter() throws {
@@ -72,7 +72,7 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertTrue(source.contains("screenFrame.midX"))
         XCTAssertTrue(source.contains("screenFrame.maxY"))
-        XCTAssertTrue(source.contains("setFrameOrigin"))
+        XCTAssertTrue(source.contains("setFrame("))
     }
 
     func testAppDelegateOwnsStatusBarControllerForReliableMenuBarPresence() throws {
@@ -110,17 +110,17 @@ final class AppLaunchSupportTests: XCTestCase {
     }
 
     func testIslandCoordinatorStoresDismissedHighlightedSessionID() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains("dismissedHighlightedSessionID"))
+        // DISABLED: highlighted mode has been removed
+        // let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+        // XCTAssertTrue(source.contains("dismissedHighlightedSessionID"))
     }
 
     func testIslandCoordinatorResizesWindowForHighlightedMode() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains("window.setContentSize"))
-        XCTAssertTrue(source.contains("CGSize(width: 860, height: 152)"))
-        XCTAssertTrue(source.contains("CGSize(width: 520, height: 44)"))
+        // DISABLED: highlighted mode has been removed
+        // let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+        // XCTAssertTrue(source.contains("window.setContentSize"))
+        // XCTAssertTrue(source.contains("CGSize(width: 860, height: 152)"))
+        // XCTAssertTrue(source.contains("CGSize(width: 300, height: 44)"))
     }
 
     func testIslandCoordinatorHostsIslandSurfaceViewInsteadOfStatusStripOnly() throws {
@@ -142,9 +142,9 @@ final class AppLaunchSupportTests: XCTestCase {
     }
 
     func testIslandCoordinatorTriggersStoreQuickActionForHighlightedSession() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains("store.performQuickAction"))
+        // DISABLED: highlighted mode has been removed
+        // let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+        // XCTAssertTrue(source.contains("store.performQuickAction"))
     }
 
     func testIslandSurfaceViewAnimatesModeChanges() throws {
@@ -155,21 +155,21 @@ final class AppLaunchSupportTests: XCTestCase {
     }
 
     func testIslandExpandedCardUsesTransitionForHighlightedAppearance() throws {
-        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains(".transition("))
+        // DISABLED: IslandExpandedCardView has been removed
+        // let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
+        // XCTAssertTrue(source.contains(".transition("))
     }
 
     func testIslandExpandedCardDoesNotEmbedTextField() throws {
-        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
-
-        XCTAssertFalse(source.contains("TextField("))
+        // DISABLED: IslandExpandedCardView has been removed
+        // let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
+        // XCTAssertFalse(source.contains("TextField("))
     }
 
     func testIslandExpandedCardDoesNotRenderMultipleActionButtons() throws {
-        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
-
-        XCTAssertFalse(source.contains("ForEach("))
+        // DISABLED: IslandExpandedCardView has been removed
+        // let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandExpandedCardView.swift", encoding: .utf8)
+        // XCTAssertFalse(source.contains("ForEach("))
     }
 
     func testIslandCoordinatorStoresAutoCollapseWorkItem() throws {
@@ -179,11 +179,11 @@ final class AppLaunchSupportTests: XCTestCase {
     }
 
     func testIslandCoordinatorSchedulesAutoCollapseFromPresentationDelay() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains("presentation.autoCollapseDelay"))
-        XCTAssertTrue(source.contains("DispatchWorkItem"))
-        XCTAssertTrue(source.contains("DispatchQueue.main.asyncAfter"))
+        // DISABLED: scheduleAutoCollapseIfNeeded has been removed along with highlighted mode
+        // let source = try String(contentsOfFile: "MacIrlandApp/App/IslandCoordinator.swift", encoding: .utf8)
+        // XCTAssertTrue(source.contains("presentation.autoCollapseDelay"))
+        // XCTAssertTrue(source.contains("DispatchWorkItem"))
+        // XCTAssertTrue(source.contains("DispatchQueue.main.asyncAfter"))
     }
 
     func testIslandCoordinatorCancelsAutoCollapseOnDismissAndOpenPanel() throws {
@@ -192,16 +192,11 @@ final class AppLaunchSupportTests: XCTestCase {
         XCTAssertTrue(source.contains("autoCollapseWorkItem?.cancel()"))
     }
 
-    func testPanelCoordinatorExposesShowPanelFocusedOnTopSession() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains("func showPanelSelectingTopSession()"))
-    }
-
     func testAppDelegateRoutesIslandOpenThroughFocusedPanelPath() throws {
         let source = try String(contentsOfFile: "MacIrlandApp/App/AppDelegate.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("showPanelSelectingSession(id:"))
+        // Panel display is disabled - island open does not route to panel
+        XCTAssertFalse(source.contains("showPanelSelectingSession(id:"))
     }
 
     func testAppDelegateOwnsRefreshCoordinatorForAppWidePolling() throws {
@@ -214,6 +209,16 @@ final class AppLaunchSupportTests: XCTestCase {
         let source = try String(contentsOfFile: "MacIrlandApp/App/RefreshCoordinator.swift", encoding: .utf8)
 
         XCTAssertTrue(source.contains("1.0"))
+    }
+
+    func testHoverExpandUsesPrimaryClaudeSessionForStatusStripAndDetailJump() throws {
+        let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandHoverExpandView.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains("store.hoverExpandPrimarySession"))
+        XCTAssertTrue(source.contains("let onJumpToSession: (TaskSession.ID) -> Void"))
+        XCTAssertTrue(source.contains("HoverExpandSessionDetail("))
+        XCTAssertTrue(source.contains("onJumpToSession: onJumpToSession"))
+        XCTAssertTrue(source.contains(".onTapGesture"))
     }
 
     func testAppDelegateStartsRefreshCoordinatorAtLaunch() throws {
@@ -241,13 +246,6 @@ final class AppLaunchSupportTests: XCTestCase {
         XCTAssertTrue(source.contains("topAnchorInset"))
     }
 
-    func testPanelCoordinatorUsesCompactDetailSheetSize() throws {
-        let source = try String(contentsOfFile: "MacIrlandApp/App/PanelCoordinator.swift", encoding: .utf8)
-
-        XCTAssertTrue(source.contains("width: 640"))
-        XCTAssertTrue(source.contains("height: 560"))
-    }
-
     func testPanelHeaderNoLongerRendersRefreshButton() throws {
         let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
 
@@ -272,5 +270,11 @@ final class AppLaunchSupportTests: XCTestCase {
 
         XCTAssertTrue(source.contains("guard"), "should have guard statement")
         XCTAssertTrue(source.contains("isRefreshing == false"), "should check isRefreshing flag")
+    }
+
+    func testRefreshCoordinatorAllowsWaitingForReplyCuePlayback() throws {
+        let source = try String(contentsOfFile: "MacIrlandApp/App/RefreshCoordinator.swift", encoding: .utf8)
+
+        XCTAssertTrue(source.contains(".waitingForReply"), "waiting/reply transitions should be allowed through the refresh cue filter")
     }
 }

@@ -56,9 +56,9 @@ public enum TaskStatus: String, CaseIterable, Codable, Sendable {
 
     public var needsAttention: Bool {
         switch self {
-        case .waitingInput, .replyAvailable, .alert, .failed, .contextLost:
+        case .waitingInput, .replyAvailable, .failed, .contextLost:
             return true
-        case .discovered, .recognizing, .running, .completed:
+        case .discovered, .recognizing, .running, .completed, .alert:
             return false
         }
     }
@@ -69,6 +69,23 @@ public enum TaskStatus: String, CaseIterable, Codable, Sendable {
             return true
         case .discovered, .recognizing, .running, .waitingInput, .replyAvailable, .alert:
             return false
+        }
+    }
+
+    public static func tier(for status: TaskStatus) -> Int {
+        switch status {
+        case .waitingInput, .failed, .contextLost:
+            return 4
+        case .alert:
+            return 3
+        case .replyAvailable:
+            return 2
+        case .running:
+            return 1
+        case .completed:
+            return 0
+        case .discovered, .recognizing:
+            return -1
         }
     }
 }
@@ -270,7 +287,9 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
     public let cliKind: CLIKind
     public let terminalAppIdentifier: String
     public let windowIdentifier: String
+    public let commandLine: String
     public let ttyIdentifier: String?
+    public let hookSessionID: String?  // Claude Code's internal session ID from hook events
     public let startedAt: Date
     public let lastSeenAt: Date
 
@@ -279,7 +298,9 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
         cliKind: CLIKind,
         terminalAppIdentifier: String,
         windowIdentifier: String,
+        commandLine: String,
         ttyIdentifier: String?,
+        hookSessionID: String? = nil,
         startedAt: Date,
         lastSeenAt: Date
     ) {
@@ -287,7 +308,9 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
         self.cliKind = cliKind
         self.terminalAppIdentifier = terminalAppIdentifier
         self.windowIdentifier = windowIdentifier
+        self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
+        self.hookSessionID = hookSessionID
         self.startedAt = startedAt
         self.lastSeenAt = lastSeenAt
     }
@@ -548,9 +571,16 @@ public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sen
     public let commandLine: String
     public let ttyIdentifier: String?
     public let transcriptPreview: String
+    public let normalizedTranscriptPreview: String
     public let recognizedCLIKind: CLIKind?
     public let inferredStatus: TaskStatus?
     public let decisionReason: String
+    /// Number of signals matched in the judge
+    public let matchedSignals: Int
+    /// Confidence score from the judge
+    public let confidence: Double
+    /// The actual normalized tail text used for status judgement
+    public let normalizedTail: String
 
     public init(
         id: UUID = UUID(),
@@ -559,9 +589,13 @@ public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sen
         commandLine: String,
         ttyIdentifier: String?,
         transcriptPreview: String,
+        normalizedTranscriptPreview: String = "",
         recognizedCLIKind: CLIKind?,
         inferredStatus: TaskStatus?,
-        decisionReason: String
+        decisionReason: String,
+        matchedSignals: Int = 0,
+        confidence: Double = 0.0,
+        normalizedTail: String = ""
     ) {
         self.id = id
         self.terminalAppIdentifier = terminalAppIdentifier
@@ -569,9 +603,13 @@ public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sen
         self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
         self.transcriptPreview = transcriptPreview
+        self.normalizedTranscriptPreview = normalizedTranscriptPreview
         self.recognizedCLIKind = recognizedCLIKind
         self.inferredStatus = inferredStatus
         self.decisionReason = decisionReason
+        self.matchedSignals = matchedSignals
+        self.confidence = confidence
+        self.normalizedTail = normalizedTail
     }
 }
 
@@ -594,19 +632,26 @@ public struct ObservationDiagnostics: Hashable, Codable, Sendable {
 public struct TerminalObservationSnapshot: Hashable, Codable, Sendable {
     public let terminalAppIdentifier: String
     public let windowTitle: String
+    /// Full window name from `name of eachWindow` — includes TERM_SESSION_ID and full working directory
+    public let fullWindowName: String
     public let commandLine: String
     public let ttyIdentifier: String?
+    public let isBusy: Bool?
 
     public init(
         terminalAppIdentifier: String,
         windowTitle: String,
+        fullWindowName: String = "",
         commandLine: String,
-        ttyIdentifier: String?
+        ttyIdentifier: String?,
+        isBusy: Bool? = nil
     ) {
         self.terminalAppIdentifier = terminalAppIdentifier
         self.windowTitle = windowTitle
+        self.fullWindowName = fullWindowName
         self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
+        self.isBusy = isBusy
     }
 }
 
@@ -614,17 +659,22 @@ public struct RawCLIEvent: Hashable, Codable, Sendable {
     public let cliKind: CLIKind
     public let timestamp: Date
     public let snippet: String
+    /// Raw transcript content for status determination.
+    /// When set, BuiltInCLIAdapter uses this instead of snippet for judgement.
+    public let transcript: String
     public let snapshot: TerminalObservationSnapshot
 
     public init(
         cliKind: CLIKind,
         timestamp: Date = .now,
         snippet: String,
+        transcript: String = "",
         snapshot: TerminalObservationSnapshot
     ) {
         self.cliKind = cliKind
         self.timestamp = timestamp
         self.snippet = snippet
+        self.transcript = transcript
         self.snapshot = snapshot
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 public struct PanelView: View {
     @Bindable private var viewModel: TaskStateStore
@@ -38,18 +39,18 @@ public struct PanelView: View {
                     } else {
                         PanelCard(tone: .elevated, padding: 16) {
                             EmptyWorkspaceView(
+                                readiness: viewModel.appReadiness,
                                 summary: viewModel.summary,
-                                topSession: viewModel.topSession,
-                                emptyStateMessage: sessionEmptyStateMessage
+                                topSession: viewModel.topSession
                             )
                         }
                     }
 
                     PanelCard(tone: .subdued, padding: 14) {
                         SessionPickerView(
-                            sessions: viewModel.sessions,
+                            sessions: viewModel.primaryPanelSessions,
                             selectedSessionID: viewModel.selectedSessionID,
-                            emptyStateMessage: sessionEmptyStateMessage,
+                            emptyStateMessage: viewModel.appReadiness.explanation,
                             onSelect: handleSelection
                         )
                     }
@@ -59,7 +60,10 @@ public struct PanelView: View {
                             isExpanded: $diagnosticsExpanded,
                             session: viewModel.selectedSession,
                             capabilityStatus: viewModel.capabilityStatus,
-                            observationDiagnostics: viewModel.observationDiagnostics
+                            observationDiagnostics: viewModel.observationDiagnostics,
+                            traySessionCount: viewModel.traySessions.count,
+                            isTrayEligible: viewModel.hasMultipleRelevantSessions,
+                            preferredIslandSessionStatus: viewModel.preferredIslandSession?.status
                         )
                     }
                 }
@@ -88,7 +92,7 @@ public struct PanelView: View {
             return "本轮已经读到终端 session，但还没有命中 Claude Code 识别规则。请展开下方诊断，查看 raw command / windowTitle / reason。"
         }
 
-        return "当前没有可查看的 AI CLI 会话。"
+        return "当前没有可查看的 Claude Code 会话。"
     }
 }
 
@@ -116,22 +120,80 @@ private struct PanelHeaderView: View {
 }
 
 private struct EmptyWorkspaceView: View {
+    let readiness: AppReadiness
     let summary: AppTaskSummary
     let topSession: TaskSession?
-    let emptyStateMessage: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PanelSectionHeader("主工作区", subtitle: "这里是 island 的二级详情层，用来继续处理当前会话。")
+            PanelSectionHeader("主工作区", subtitle: readinessSubtitle)
 
-            Text("还没有可处理的会话")
+            Text(readiness.title)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(readinessTitleColor)
 
-            Text(emptyStateMessage)
+            Text(readiness.explanation)
                 .font(.subheadline)
                 .foregroundStyle(MacIrlandPalette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let nextAction = readiness.nextAction {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Text(nextAction)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange.opacity(0.9))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.2), lineWidth: 1)
+                )
+
+                if readiness.level == .blocked {
+                    Button("打开系统设置") {
+                        openAutomationSettings()
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                }
+            }
+        }
+    }
+
+    private var readinessSubtitle: String {
+        switch readiness.level {
+        case .ready:
+            return "当前会话等待你的输入"
+        case .blocked:
+            return "应用部分功能受限，需要你授权"
+        case .noSession:
+            return "还没有活跃的 Claude Code 会话"
+        case .limitedReply:
+            return "当前会话暂时无法回复"
+        case .partialObservation:
+            return "检测到非 Claude 会话，需要确认 Claude Code 已启动"
+        }
+    }
+
+    private var readinessTitleColor: Color {
+        switch readiness.level {
+        case .ready:
+            return .green
+        case .blocked, .limitedReply:
+            return .orange
+        case .noSession, .partialObservation:
+            return .white
+        }
+    }
+
+    private func openAutomationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
         }
     }
 }
@@ -141,13 +203,19 @@ private struct DiagnosticsDisclosureView: View {
     let session: TaskSession?
     let capabilityStatus: CapabilityStatus
     let observationDiagnostics: ObservationDiagnostics
+    let traySessionCount: Int
+    let isTrayEligible: Bool
+    let preferredIslandSessionStatus: TaskStatus?
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             DiagnosticsSectionView(
                 session: session,
                 capabilityStatus: capabilityStatus,
-                observationDiagnostics: observationDiagnostics
+                observationDiagnostics: observationDiagnostics,
+                traySessionCount: traySessionCount,
+                isTrayEligible: isTrayEligible,
+                preferredIslandSessionStatus: preferredIslandSessionStatus
             )
             .padding(.top, 14)
         } label: {
