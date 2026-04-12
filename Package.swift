@@ -24,11 +24,15 @@ let package = Package(
         .executableTarget(
             name: "MacIrlandApp",
             dependencies: ["MacIrlandKit"],
-            path: "MacIrlandApp"
+            path: "MacIrlandApp",
+            exclude: ["Resources"]
         ),
         .testTarget(
             name: "MacIrlandTests",
-            dependencies: ["MacIrlandKit"],
+            dependencies: [
+                "MacIrlandKit",
+                "MacIrlandApp"
+            ],
             path: "MacIrlandTests"
         )
     ]

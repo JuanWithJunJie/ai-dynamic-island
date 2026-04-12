@@ -4,13 +4,13 @@ public enum IslandAccent {
     public static func color(for status: TaskStatus) -> Color {
         switch status {
         case .running:
-            return .blue
+            return .green
         case .waitingInput, .replyAvailable:
             return .orange
         case .alert, .failed:
             return .red
         case .completed:
-            return .green
+            return .orange
         case .contextLost:
             return .gray
         case .discovered, .recognizing:
@@ -32,7 +32,11 @@ public struct StatusBadge: View {
             .foregroundStyle(IslandAccent.color(for: status))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(IslandAccent.color(for: status).opacity(0.14), in: Capsule())
+            .background(IslandAccent.color(for: status).opacity(0.16), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(IslandAccent.color(for: status).opacity(0.22), lineWidth: 1)
+            )
     }
 }
 
@@ -48,12 +52,11 @@ public struct StatusSpriteView: View {
             .font(.system(size: 28, weight: .bold, design: .monospaced))
             .foregroundStyle(IslandAccent.color(for: status))
             .frame(width: 42, height: 42)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(IslandAccent.color(for: status))
-                    .frame(width: 9, height: 9)
-            }
+            .background(MacIrlandPalette.surfaceMuted, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(MacIrlandPalette.border, lineWidth: 1)
+            )
     }
 
     private var sprite: String {
