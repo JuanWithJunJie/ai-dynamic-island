@@ -266,15 +266,34 @@ public final class TaskStateStore {
             }
         }
 
+        // If no session found by hookSessionID, try tty matching only if exactly ONE session matches.
+        // Multiple tty matches (same tty, no hookSessionID) is ambiguous → create new session.
+        // No tty matches → create new session.
+        if sessionIndex == nil {
+            let ttyMatches = sessions.filter { $0.identity.ttyIdentifier == event.tty }
+            if ttyMatches.count == 1 {
+                sessionIndex = sessions.firstIndex { $0.identity.ttyIdentifier == event.tty }
+                needsHookSessionIDUpdate = true
+            }
+            // If 0 or 2+ matches, leave sessionIndex nil → will create new session below
+        }
+
+        // No existing session found — create a new hook-first session
         guard let idx = sessionIndex else {
-            // No matching session found — hook event arrived before AppleScript observation
-            // created the session. This is expected for new sessions.
-            if let data = "  -> No matching session found\n".data(using: .utf8),
+            // Debug logging
+            if let data = "  -> Creating new hook-first session\n".data(using: .utf8),
                let file = FileHandle(forWritingAtPath: "/tmp/macirland-hook-debug.log") {
                 file.seekToEndOfFile()
                 file.write(data)
                 file.closeFile()
             }
+
+            let newSession = createHookFirstSession(from: event)
+            var updatedSessions = sessions
+            updatedSessions.append(newSession)
+            updatedSessions = aggregationEngine.prioritize(updatedSessions)
+            sessions = updatedSessions
+            summary = aggregationEngine.summary(for: updatedSessions)
             return
         }
 
@@ -299,7 +318,6 @@ public final class TaskStateStore {
         var updatedSession = session
 
         // If session doesn't have hookSessionID yet, update it
-        let updatedIdentity = session.identity
         if needsHookSessionIDUpdate, let hookSID = event.sessionID.nilIfEmpty {
             let updatedIdentity = SessionIdentity(
                 id: session.identity.id,
@@ -309,6 +327,7 @@ public final class TaskStateStore {
                 commandLine: session.identity.commandLine,
                 ttyIdentifier: session.identity.ttyIdentifier,
                 hookSessionID: hookSID,
+                sessionName: session.identity.sessionName,
                 startedAt: session.identity.startedAt,
                 lastSeenAt: session.identity.lastSeenAt
             )
@@ -422,6 +441,167 @@ public final class TaskStateStore {
 
         guard let cue, let player = _hookSoundPlayer else { return }
         player.playIfAllowed(cue, mode: soundMode)
+    }
+
+    /// Creates a new TaskSession directly from a HookEvent, without requiring AppleScript observation.
+    ///
+    /// Hook events are the authoritative source for Claude Code session identity. This method
+    /// creates a session with a stable ID derived from hookSessionID + terminalAppIdentifier,
+    /// ensuring AppleScript-observed sessions for the same logical session can merge via
+    /// the same tty-based identity key.
+    private func createHookFirstSession(from event: HookEvent) -> TaskSession {
+        // Derive stable session ID from hookSessionID and terminal app.
+        // Using hookSessionID as primary identity key makes hook-first sessions
+        // unique and prevents AppleScript observation from creating duplicates
+        // when it later sees the same session.
+        let terminalAppIdentifier = terminalAppIdentifier(for: event.tty)
+
+        // Build identity with hook-derived fields
+        let identity = SessionIdentity(
+            id: UUID(), // Fresh UUID for hook-first session; merge via tty happens when AppleScript observes
+            cliKind: .claudeCode,
+            terminalAppIdentifier: terminalAppIdentifier,
+            windowIdentifier: event.tty,
+            commandLine: "",
+            ttyIdentifier: event.tty,
+            hookSessionID: event.sessionID.nilIfEmpty,
+            sessionName: "",
+            startedAt: Date(),
+            lastSeenAt: Date()
+        )
+
+        // Convert hook status to task status
+        let newStatus: TaskStatus
+        switch event.hookStatus {
+        case .idle:
+            newStatus = .running
+        case .running:
+            newStatus = .running
+        case .waitingForReply:
+            newStatus = .waitingInput
+        case .completed:
+            newStatus = .completed
+        }
+
+        // Derive title from cwd (last path component = project signal)
+        let projectName = URL(fileURLWithPath: event.cwd).lastPathComponent
+        let title = projectName.isEmpty ? "Claude Code" : projectName
+
+        // Build evidence from hook event
+        let evidence = [
+            EvidenceItem(
+                sourceType: .bridge,
+                summary: "Hook event: \(event.event.rawValue)",
+                rawSnippet: "tty: \(event.tty), cwd: \(event.cwd), tool: \(event.tool ?? "none")",
+                weight: 0.95
+            )
+        ]
+
+        // Build recent event
+        let recentEvents = [
+            SessionEvent(kind: eventKindFor(hookEvent: event), message: event.status)
+        ]
+
+        // Reply capability based on terminal type
+        let replyCapability: ReplyCapability
+        switch terminalAppIdentifier {
+        case "com.apple.Terminal":
+            replyCapability = ReplyCapability(
+                status: .available,
+                reason: "Hook-first session with Terminal",
+                targetDescription: "Claude Code",
+                channelStatus: "applescript-terminal"
+            )
+        case "com.googlecode.iterm2":
+            replyCapability = ReplyCapability(
+                status: .available,
+                reason: "Hook-first session with iTerm2",
+                targetDescription: "Claude Code",
+                channelStatus: "applescript-iterm"
+            )
+        default:
+            replyCapability = ReplyCapability(
+                status: .manualConfirmationRequired,
+                reason: "Hook-first session",
+                targetDescription: "Claude Code",
+                channelStatus: "dynamic"
+            )
+        }
+
+        // Initial history entry for hook-driven creation
+        let initialHistoryEntry = SessionHistoryEntry(
+            timestamp: Date(),
+            kind: historyKindFor(status: newStatus),
+            title: "Hook: \(event.event.rawValue)",
+            detail: "cwd: \(event.cwd), tool: \(event.tool ?? "none")",
+            relatedStatus: newStatus
+        )
+
+        return TaskSession(
+            id: identity.id,
+            identity: identity,
+            title: title,
+            status: newStatus,
+            priority: priorityForHookStatus(newStatus),
+            confidence: 0.95, // Hook events are authoritative
+            summary: "\(event.status) — \(event.cwd)",
+            bridgeTarget: BridgeTarget(
+                cliKind: .claudeCode,
+                sessionID: identity.id,
+                terminalContext: event.tty,
+                channelType: terminalAppIdentifier == "com.apple.Terminal" ? "applescript-terminal" : "applescript-iterm",
+                displayName: "Claude Code · \(title)"
+            ),
+            replyCapability: replyCapability,
+            lastActiveAt: Date(),
+            evidence: evidence,
+            recentEvents: recentEvents,
+            recentMessages: [],
+            historyEntries: [initialHistoryEntry],
+            quickActions: BuiltInCLIAdapter.claudeCode.supportedQuickActions
+        )
+    }
+
+    private func eventKindFor(hookEvent: HookEvent) -> SessionEventKind {
+        switch hookEvent.hookStatus {
+        case .running:
+            return .started
+        case .waitingForReply:
+            return .waitingForInput
+        case .completed:
+            return .completed
+        case .idle:
+            return .started
+        }
+    }
+
+    private func priorityForHookStatus(_ status: TaskStatus) -> Int {
+        switch status {
+        case .waitingInput:
+            return 95
+        case .replyAvailable:
+            return 100
+        case .alert, .failed:
+            return 90
+        case .running:
+            return 70
+        case .completed:
+            return 40
+        default:
+            return 50
+        }
+    }
+
+    private func terminalAppIdentifier(for tty: String) -> String {
+        // Infer terminal app from tty path
+        if tty.contains("ttys") && !tty.contains("pts") {
+            // Standard macOS pty names: /dev/ttysXXX → Terminal
+            return "com.apple.Terminal"
+        } else if tty.contains("pts") {
+            // /dev/pts/X → typically iTerm2 or other
+            return "com.googlecode.iterm2"
+        }
+        return "com.apple.Terminal" // default
     }
 
     private func historyKindFor(status: TaskStatus) -> SessionHistoryKind {
@@ -539,10 +719,12 @@ public final class TaskStateStore {
             }
 
             // Preserve hook-driven status: if existing session is completed but observation
-            // reports running/waiting, keep the hook-driven completed status
+            // reports running/waiting/alert, keep the hook-driven completed status.
+            // Alert can override completed if the existing session is NOT completed
+            // (i.e., observation detected a real alert condition).
             var mergedSession = refreshedSession
             if existingSession.status == .completed,
-               (refreshedSession.status == .running || refreshedSession.status == .waitingInput) {
+               (refreshedSession.status == .running || refreshedSession.status == .waitingInput || refreshedSession.status == .alert) {
                 mergedSession = TaskSession(
                     id: refreshedSession.id,
                     identity: refreshedSession.identity,
