@@ -225,6 +225,9 @@ final class IslandCoordinator {
             cancelHoverTimer()
             guard case .hoverExpand = mode else { return }
             // Use a delay before collapsing to allow mouse movement within hover expand
+            // Increased from 150ms to 300ms to prevent accidental collapse when
+            // mouse briefly exits during subview navigation (e.g., moving between
+            // the detail section and the session list)
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 guard case .hoverExpand = self.mode else { return }
@@ -232,7 +235,7 @@ final class IslandCoordinator {
                 self.recomputeMode()
             }
             autoCollapseWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
         } else {
             // Mouse re-entered - cancel any pending collapse
             cancelAutoCollapse()
@@ -248,6 +251,7 @@ final class IslandCoordinator {
             // Use a delay before collapsing to allow mouse movement within hover expand
             // Without this, moving the mouse slightly (e.g., to click a session row)
             // can trigger hover exit and collapse before the click registers
+            // Increased from 150ms to 300ms to prevent accidental collapse
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 guard case .hoverExpand = self.mode else { return }
@@ -255,7 +259,7 @@ final class IslandCoordinator {
                 self.recomputeMode()
             }
             autoCollapseWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
         } else {
             // Mouse re-entered - cancel any pending collapse
             cancelAutoCollapse()
