@@ -56,9 +56,9 @@ public enum TaskStatus: String, CaseIterable, Codable, Sendable {
 
     public var needsAttention: Bool {
         switch self {
-        case .waitingInput, .replyAvailable, .alert, .failed, .contextLost:
+        case .waitingInput, .replyAvailable, .failed, .contextLost:
             return true
-        case .discovered, .recognizing, .running, .completed:
+        case .discovered, .recognizing, .running, .completed, .alert:
             return false
         }
     }
@@ -69,6 +69,23 @@ public enum TaskStatus: String, CaseIterable, Codable, Sendable {
             return true
         case .discovered, .recognizing, .running, .waitingInput, .replyAvailable, .alert:
             return false
+        }
+    }
+
+    public static func tier(for status: TaskStatus) -> Int {
+        switch status {
+        case .waitingInput, .failed, .contextLost:
+            return 4
+        case .alert:
+            return 3
+        case .replyAvailable:
+            return 2
+        case .running:
+            return 1
+        case .completed:
+            return 0
+        case .discovered, .recognizing:
+            return -1
         }
     }
 }
@@ -168,26 +185,6 @@ public enum SoundCue: String, Codable, Sendable {
     case waitingForReply
     case completed
     case failed
-}
-
-public enum SessionAttentionLevel: String, Codable, Sendable {
-    case passive
-    case active
-    case needsReply
-    case warning
-
-    public var title: String {
-        switch self {
-        case .passive:
-            return "后台运行"
-        case .active:
-            return "活跃中"
-        case .needsReply:
-            return "等待你处理"
-        case .warning:
-            return "需要关注"
-        }
-    }
 }
 
 public struct EvidenceItem: Identifiable, Hashable, Codable, Sendable {
@@ -290,7 +287,9 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
     public let cliKind: CLIKind
     public let terminalAppIdentifier: String
     public let windowIdentifier: String
+    public let commandLine: String
     public let ttyIdentifier: String?
+    public let hookSessionID: String?  // Claude Code's internal session ID from hook events
     public let startedAt: Date
     public let lastSeenAt: Date
 
@@ -299,7 +298,9 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
         cliKind: CLIKind,
         terminalAppIdentifier: String,
         windowIdentifier: String,
+        commandLine: String,
         ttyIdentifier: String?,
+        hookSessionID: String? = nil,
         startedAt: Date,
         lastSeenAt: Date
     ) {
@@ -307,7 +308,9 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
         self.cliKind = cliKind
         self.terminalAppIdentifier = terminalAppIdentifier
         self.windowIdentifier = windowIdentifier
+        self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
+        self.hookSessionID = hookSessionID
         self.startedAt = startedAt
         self.lastSeenAt = lastSeenAt
     }
@@ -332,6 +335,45 @@ public struct SessionEvent: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+public enum SessionHistoryKind: String, Codable, Sendable {
+    case phaseDiscovered
+    case phaseRunning
+    case phaseWaitingInput
+    case phaseReplyAvailable
+    case phaseAlert
+    case phaseCompleted
+    case phaseFailed
+    case phaseContextLost
+    case userQuickAction
+    case userCustomReply
+    case userReplyRejected
+}
+
+public struct SessionHistoryEntry: Identifiable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public let timestamp: Date
+    public let kind: SessionHistoryKind
+    public let title: String
+    public let detail: String
+    public let relatedStatus: TaskStatus?
+
+    public init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        kind: SessionHistoryKind,
+        title: String,
+        detail: String,
+        relatedStatus: TaskStatus? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+        self.relatedStatus = relatedStatus
+    }
+}
+
 public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public let identity: SessionIdentity
@@ -346,6 +388,7 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
     public let evidence: [EvidenceItem]
     public let recentEvents: [SessionEvent]
     public let recentMessages: [MessageSnippet]
+    public let historyEntries: [SessionHistoryEntry]
     public let quickActions: [ReplyActionType]
 
     public init(
@@ -362,6 +405,7 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
         evidence: [EvidenceItem],
         recentEvents: [SessionEvent],
         recentMessages: [MessageSnippet],
+        historyEntries: [SessionHistoryEntry] = [],
         quickActions: [ReplyActionType]
     ) {
         self.id = id
@@ -377,6 +421,7 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
         self.evidence = evidence
         self.recentEvents = recentEvents
         self.recentMessages = recentMessages
+        self.historyEntries = historyEntries
         self.quickActions = quickActions
     }
 
@@ -403,17 +448,24 @@ public struct TaskSession: Identifiable, Hashable, Codable, Sendable {
         status == .waitingInput || status == .replyAvailable
     }
 
-    public var attentionLevel: SessionAttentionLevel {
-        switch status {
-        case .replyAvailable, .waitingInput:
-            return .needsReply
-        case .alert, .failed, .contextLost:
-            return .warning
-        case .running:
-            return .active
-        case .completed, .discovered, .recognizing:
-            return .passive
-        }
+    public func withHistoryEntries(_ historyEntries: [SessionHistoryEntry]) -> TaskSession {
+        TaskSession(
+            id: id,
+            identity: identity,
+            title: title,
+            status: status,
+            priority: priority,
+            confidence: confidence,
+            summary: summary,
+            bridgeTarget: bridgeTarget,
+            replyCapability: replyCapability,
+            lastActiveAt: lastActiveAt,
+            evidence: evidence,
+            recentEvents: recentEvents,
+            recentMessages: recentMessages,
+            historyEntries: historyEntries,
+            quickActions: quickActions
+        )
     }
 }
 
@@ -443,34 +495,163 @@ public struct CapabilityStatus: Hashable, Codable, Sendable {
     public let accessibilityGranted: Bool
     public let localOnlyProcessing: Bool
     public let explanation: String
+    public let observationBlocked: Bool
 
     public init(
         accessibilityGranted: Bool,
         localOnlyProcessing: Bool,
-        explanation: String
+        explanation: String,
+        observationBlocked: Bool = false
     ) {
         self.accessibilityGranted = accessibilityGranted
         self.localOnlyProcessing = localOnlyProcessing
         self.explanation = explanation
+        self.observationBlocked = observationBlocked
+    }
+}
+
+public enum ObservationReaderFetchStatus: String, Codable, Sendable {
+    case notRunning
+    case success
+    case emptyResult
+    case appleScriptError
+
+    public var label: String {
+        switch self {
+        case .notRunning:
+            return "未运行"
+        case .success:
+            return "读取成功"
+        case .emptyResult:
+            return "无可读结果"
+        case .appleScriptError:
+            return "脚本失败"
+        }
+    }
+}
+
+public struct ObservationReaderDiagnostic: Identifiable, Hashable, Codable, Sendable {
+    public let id: String
+    public let readerName: String
+    public let terminalAppIdentifier: String
+    public let isAppRunning: Bool
+    public let fetchStatus: ObservationReaderFetchStatus
+    public let observationCount: Int
+    public let recognizedEventCount: Int
+    public let message: String
+    public let errorDescription: String?
+
+    public init(
+        id: String,
+        readerName: String,
+        terminalAppIdentifier: String,
+        isAppRunning: Bool,
+        fetchStatus: ObservationReaderFetchStatus,
+        observationCount: Int,
+        recognizedEventCount: Int,
+        message: String,
+        errorDescription: String? = nil
+    ) {
+        self.id = id
+        self.readerName = readerName
+        self.terminalAppIdentifier = terminalAppIdentifier
+        self.isAppRunning = isAppRunning
+        self.fetchStatus = fetchStatus
+        self.observationCount = observationCount
+        self.recognizedEventCount = recognizedEventCount
+        self.message = message
+        self.errorDescription = errorDescription
+    }
+}
+
+public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public let terminalAppIdentifier: String
+    public let windowTitle: String
+    public let commandLine: String
+    public let ttyIdentifier: String?
+    public let transcriptPreview: String
+    public let normalizedTranscriptPreview: String
+    public let recognizedCLIKind: CLIKind?
+    public let inferredStatus: TaskStatus?
+    public let decisionReason: String
+    /// Number of signals matched in the judge
+    public let matchedSignals: Int
+    /// Confidence score from the judge
+    public let confidence: Double
+    /// The actual normalized tail text used for status judgement
+    public let normalizedTail: String
+
+    public init(
+        id: UUID = UUID(),
+        terminalAppIdentifier: String,
+        windowTitle: String,
+        commandLine: String,
+        ttyIdentifier: String?,
+        transcriptPreview: String,
+        normalizedTranscriptPreview: String = "",
+        recognizedCLIKind: CLIKind?,
+        inferredStatus: TaskStatus?,
+        decisionReason: String,
+        matchedSignals: Int = 0,
+        confidence: Double = 0.0,
+        normalizedTail: String = ""
+    ) {
+        self.id = id
+        self.terminalAppIdentifier = terminalAppIdentifier
+        self.windowTitle = windowTitle
+        self.commandLine = commandLine
+        self.ttyIdentifier = ttyIdentifier
+        self.transcriptPreview = transcriptPreview
+        self.normalizedTranscriptPreview = normalizedTranscriptPreview
+        self.recognizedCLIKind = recognizedCLIKind
+        self.inferredStatus = inferredStatus
+        self.decisionReason = decisionReason
+        self.matchedSignals = matchedSignals
+        self.confidence = confidence
+        self.normalizedTail = normalizedTail
+    }
+}
+
+public struct ObservationDiagnostics: Hashable, Codable, Sendable {
+    public let timestamp: Date
+    public let readers: [ObservationReaderDiagnostic]
+    public let sessions: [ObservationSessionDiagnostic]
+
+    public init(
+        timestamp: Date = .now,
+        readers: [ObservationReaderDiagnostic],
+        sessions: [ObservationSessionDiagnostic]
+    ) {
+        self.timestamp = timestamp
+        self.readers = readers
+        self.sessions = sessions
     }
 }
 
 public struct TerminalObservationSnapshot: Hashable, Codable, Sendable {
     public let terminalAppIdentifier: String
     public let windowTitle: String
+    /// Full window name from `name of eachWindow` — includes TERM_SESSION_ID and full working directory
+    public let fullWindowName: String
     public let commandLine: String
     public let ttyIdentifier: String?
+    public let isBusy: Bool?
 
     public init(
         terminalAppIdentifier: String,
         windowTitle: String,
+        fullWindowName: String = "",
         commandLine: String,
-        ttyIdentifier: String?
+        ttyIdentifier: String?,
+        isBusy: Bool? = nil
     ) {
         self.terminalAppIdentifier = terminalAppIdentifier
         self.windowTitle = windowTitle
+        self.fullWindowName = fullWindowName
         self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
+        self.isBusy = isBusy
     }
 }
 
@@ -478,17 +659,22 @@ public struct RawCLIEvent: Hashable, Codable, Sendable {
     public let cliKind: CLIKind
     public let timestamp: Date
     public let snippet: String
+    /// Raw transcript content for status determination.
+    /// When set, BuiltInCLIAdapter uses this instead of snippet for judgement.
+    public let transcript: String
     public let snapshot: TerminalObservationSnapshot
 
     public init(
         cliKind: CLIKind,
         timestamp: Date = .now,
         snippet: String,
+        transcript: String = "",
         snapshot: TerminalObservationSnapshot
     ) {
         self.cliKind = cliKind
         self.timestamp = timestamp
         self.snippet = snippet
+        self.transcript = transcript
         self.snapshot = snapshot
     }
 }

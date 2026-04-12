@@ -8,15 +8,14 @@ public struct OverviewSectionView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("任务总览")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 10) {
+            PanelSectionHeader("任务总览", subtitle: "当前面板里的活动与完成态分布。")
 
-            HStack(spacing: 12) {
-                MetricCard(title: "运行中", value: summary.runningCount, tint: .blue, systemImage: "bolt.fill")
-                MetricCard(title: "等待用户", value: summary.waitingCount, tint: .orange, systemImage: "message.badge.fill")
-                MetricCard(title: "已完成", value: summary.completedCount, tint: .green, systemImage: "checkmark.circle.fill")
-                MetricCard(title: "异常", value: summary.alertCount, tint: .red, systemImage: "exclamationmark.triangle.fill")
+            HStack(spacing: 10) {
+                MetricCard(title: "运行中", value: summary.runningCount, tint: .blue)
+                MetricCard(title: "等待用户", value: summary.waitingCount, tint: .orange)
+                MetricCard(title: "已完成", value: summary.completedCount, tint: .green)
+                MetricCard(title: "异常", value: summary.alertCount, tint: .red)
             }
         }
     }
@@ -26,19 +25,26 @@ private struct MetricCard: View {
     let title: String
     let value: Int
     let tint: Color
-    let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: systemImage)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MacIrlandPalette.secondaryText)
             Text("\(value)")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(tint)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+            Capsule()
+                .fill(tint.opacity(0.88))
+                .frame(width: 22, height: 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(tint.opacity(0.10), lineWidth: 1)
+        )
     }
 }

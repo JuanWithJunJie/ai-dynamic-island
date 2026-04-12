@@ -1,230 +1,241 @@
 import SwiftUI
+import AppKit
 
 public struct PanelView: View {
     @Bindable private var viewModel: TaskStateStore
     @State private var lastActionResult: ReplyValidationResult?
+    @State private var diagnosticsExpanded: Bool
 
     public init(viewModel: TaskStateStore) {
         self.viewModel = viewModel
+        _diagnosticsExpanded = State(initialValue: viewModel.capabilityStatus.showsDiagnosticsExpandedByDefault)
     }
 
     public var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color.black.opacity(0.95), Color.blue.opacity(0.18)],
+                colors: [MacIrlandPalette.canvasTop, MacIrlandPalette.canvasBottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    IslandCompactView(session: viewModel.topSession)
-                    OverviewSectionView(summary: viewModel.summary)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    PanelHeaderView(
+                        summary: viewModel.summary,
+                        topSession: viewModel.topSession,
+                        capabilityStatus: viewModel.capabilityStatus
+                    )
 
-                    if let session = viewModel.topSession {
-                        sessionSection(session)
+                    if let session = viewModel.selectedSession {
+                        PanelCard(tone: .elevated, padding: 16) {
+                            SessionDetailView(
+                                viewModel: viewModel,
+                                session: session,
+                                lastActionResult: $lastActionResult
+                            )
+                        }
+                    } else {
+                        PanelCard(tone: .elevated, padding: 16) {
+                            EmptyWorkspaceView(
+                                readiness: viewModel.appReadiness,
+                                summary: viewModel.summary,
+                                topSession: viewModel.topSession
+                            )
+                        }
                     }
 
-                    DiagnosticsSectionView(session: viewModel.topSession, capabilityStatus: viewModel.capabilityStatus)
+                    PanelCard(tone: .subdued, padding: 14) {
+                        SessionPickerView(
+                            sessions: viewModel.primaryPanelSessions,
+                            selectedSessionID: viewModel.selectedSessionID,
+                            emptyStateMessage: viewModel.appReadiness.explanation,
+                            onSelect: handleSelection
+                        )
+                    }
+
+                    PanelCard(tone: .subdued, padding: 14) {
+                        DiagnosticsDisclosureView(
+                            isExpanded: $diagnosticsExpanded,
+                            session: viewModel.selectedSession,
+                            capabilityStatus: viewModel.capabilityStatus,
+                            observationDiagnostics: viewModel.observationDiagnostics,
+                            traySessionCount: viewModel.traySessions.count,
+                            isTrayEligible: viewModel.hasMultipleRelevantSessions,
+                            preferredIslandSessionStatus: viewModel.preferredIslandSession?.status
+                        )
+                    }
                 }
-                .padding(20)
+                .padding(18)
             }
         }
-        .frame(minWidth: 560, minHeight: 680)
-        .toolbar {
-            Button("刷新") {
-                viewModel.refresh()
+        .frame(minWidth: 640, minHeight: 560)
+        .onChange(of: viewModel.capabilityStatus.observationBlocked) { _, isBlocked in
+            if isBlocked {
+                diagnosticsExpanded = true
             }
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("AI CLI 灵动岛")
-                    .font(.title2.weight(.bold))
+    private func handleSelection(_ session: TaskSession) {
+        viewModel.selectSession(session)
+        lastActionResult = nil
+    }
+
+    private var sessionEmptyStateMessage: String {
+        if viewModel.capabilityStatus.observationBlocked {
+            return "当前没有成功读取到 Claude Code 会话。请确认 Terminal / iTerm 自动化权限已授权，系统会在下一轮自动刷新时重试。"
+        }
+
+        if viewModel.observationDiagnostics.sessions.contains(where: { $0.recognizedCLIKind == nil }) {
+            return "本轮已经读到终端 session，但还没有命中 Claude Code 识别规则。请展开下方诊断，查看 raw command / windowTitle / reason。"
+        }
+
+        return "当前没有可查看的 Claude Code 会话。"
+    }
+}
+
+private struct PanelHeaderView: View {
+    let summary: AppTaskSummary
+    let topSession: TaskSession?
+    let capabilityStatus: CapabilityStatus
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("MacIrland")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                Text("统一查看活跃任务、等待回复与异常状态")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.65))
+
+                Text(topSession?.compactSessionSubtitle ?? "这里是 island 的二级详情层，用来继续处理当前会话。")
+                    .font(.footnote)
+                    .foregroundStyle(MacIrlandPalette.secondaryText)
+                    .lineLimit(2)
             }
 
-            Spacer(minLength: 0)
-
-            VStack(alignment: .trailing, spacing: 6) {
-                if let session = viewModel.topSession {
-                    StatusBadge(status: session.status)
-                    Text(session.sourceCLI.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.72))
-                }
-
-                Text(refreshLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
-            }
+            Spacer()
         }
     }
+}
 
-    @ViewBuilder
-    private func sessionSection(_ session: TaskSession) -> some View {
+private struct EmptyWorkspaceView: View {
+    let readiness: AppReadiness
+    let summary: AppTaskSummary
+    let topSession: TaskSession?
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("当前任务")
-                .font(.headline)
-                .foregroundStyle(.white)
+            PanelSectionHeader("主工作区", subtitle: readinessSubtitle)
 
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(session.title)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.white)
-                        Text(session.summary)
-                            .foregroundStyle(.white.opacity(0.72))
-                    }
+            Text(readiness.title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(readinessTitleColor)
 
-                    Spacer(minLength: 0)
+            Text(readiness.explanation)
+                .font(.subheadline)
+                .foregroundStyle(MacIrlandPalette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Label(session.attentionLevel.title, systemImage: attentionSymbol(for: session))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(IslandAccent.color(for: session.status))
-                        Text("优先级 \(session.priority)")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.55))
-                    }
+            if let nextAction = readiness.nextAction {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Text(nextAction)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange.opacity(0.9))
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.2), lineWidth: 1)
+                )
 
-                statusHighlights(for: session)
-
-                if let target = session.bridgeTarget {
-                    LabeledContent("目标会话") {
-                        Text(target.displayName)
-                            .foregroundStyle(.white.opacity(0.72))
+                if readiness.level == .blocked {
+                    Button("打开系统设置") {
+                        openAutomationSettings()
                     }
-                    .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("关键事件")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                    ForEach(session.recentEvents) { event in
-                        HStack(alignment: .top, spacing: 8) {
-                            Circle()
-                                .fill(IslandAccent.color(for: session.status))
-                                .frame(width: 8, height: 8)
-                                .padding(.top, 5)
-                            Text(event.message)
-                                .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.78))
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("最近消息")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                    ForEach(session.recentMessages) { message in
-                        Text(message.text)
-                            .font(.subheadline)
-                            .foregroundStyle(message.isError ? .red.opacity(0.9) : .white.opacity(0.9))
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("快捷回复")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                    HStack(spacing: 8) {
-                        ForEach(session.quickActions.prefix(5), id: \.self) { action in
-                            Button(action.title) {
-                                if action == .customText {
-                                    lastActionResult = viewModel.sendDraftReply(for: session)
-                                } else {
-                                    viewModel.draftReply = action.defaultMessage
-                                    lastActionResult = viewModel.performQuickAction(action, for: session)
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(IslandAccent.color(for: session.status))
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("自由输入")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                    TextField("输入要发送给 CLI 的回复", text: $viewModel.draftReply, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                    Button("发送文本") {
-                        lastActionResult = viewModel.sendDraftReply(for: session)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(IslandAccent.color(for: session.status))
-                }
-
-                if let lastActionResult {
-                    Text(lastActionResult.explanation)
-                        .font(.footnote)
-                        .foregroundStyle(lastActionResult.canSend ? .green : .orange)
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
                 }
             }
-            .padding(18)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(IslandAccent.color(for: session.status).opacity(0.14), lineWidth: 1)
+        }
+    }
+
+    private var readinessSubtitle: String {
+        switch readiness.level {
+        case .ready:
+            return "当前会话等待你的输入"
+        case .blocked:
+            return "应用部分功能受限，需要你授权"
+        case .noSession:
+            return "还没有活跃的 Claude Code 会话"
+        case .limitedReply:
+            return "当前会话暂时无法回复"
+        case .partialObservation:
+            return "检测到非 Claude 会话，需要确认 Claude Code 已启动"
+        }
+    }
+
+    private var readinessTitleColor: Color {
+        switch readiness.level {
+        case .ready:
+            return .green
+        case .blocked, .limitedReply:
+            return .orange
+        case .noSession, .partialObservation:
+            return .white
+        }
+    }
+
+    private func openAutomationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+private struct DiagnosticsDisclosureView: View {
+    @Binding var isExpanded: Bool
+    let session: TaskSession?
+    let capabilityStatus: CapabilityStatus
+    let observationDiagnostics: ObservationDiagnostics
+    let traySessionCount: Int
+    let isTrayEligible: Bool
+    let preferredIslandSessionStatus: TaskStatus?
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            DiagnosticsSectionView(
+                session: session,
+                capabilityStatus: capabilityStatus,
+                observationDiagnostics: observationDiagnostics,
+                traySessionCount: traySessionCount,
+                isTrayEligible: isTrayEligible,
+                preferredIslandSessionStatus: preferredIslandSessionStatus
             )
-        }
-    }
+            .padding(.top, 14)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("诊断")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(isExpanded ? "收起" : "展开")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MacIrlandPalette.tertiaryText)
+                }
 
-    private func statusHighlights(for session: TaskSession) -> some View {
-        HStack(spacing: 10) {
-            highlightChip(title: session.attentionLevel.title, systemImage: attentionSymbol(for: session), tint: IslandAccent.color(for: session.status))
-            highlightChip(title: "置信度 \(Int(session.confidence * 100))%", systemImage: "scope", tint: .white.opacity(0.85))
-            if session.canReplySafely {
-                highlightChip(title: "可安全回复", systemImage: "arrowshape.turn.up.left.fill", tint: .green)
-            } else {
-                highlightChip(title: "仅建议确认", systemImage: "hand.raised.fill", tint: .orange)
+                Text(capabilityStatus.panelDiagnosticsSummary)
+                    .font(.caption)
+                    .foregroundStyle(MacIrlandPalette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private func highlightChip(title: String, systemImage: String, tint: Color) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.06), in: Capsule())
-    }
-
-    private var refreshLabel: String {
-        let elapsed = max(Int(Date.now.timeIntervalSince(viewModel.lastRefreshAt)), 0)
-        if elapsed < 2 {
-            return "刚刚更新"
-        }
-        return "\(elapsed) 秒前更新"
-    }
-
-    private func attentionSymbol(for session: TaskSession) -> String {
-        switch session.attentionLevel {
-        case .passive:
-            return "moon.stars"
-        case .active:
-            return "bolt.horizontal"
-        case .needsReply:
-            return "message.badge"
-        case .warning:
-            return "exclamationmark.triangle"
-        }
+        .tint(.white)
     }
 }
