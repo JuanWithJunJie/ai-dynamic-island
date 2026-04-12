@@ -47,6 +47,7 @@ public struct BuiltInCLIAdapter: CLIAdapter {
                 : event.snapshot.fullWindowName,
             commandLine: event.snapshot.commandLine,
             ttyIdentifier: event.snapshot.ttyIdentifier,
+            sessionName: event.snapshot.sessionName,
             startedAt: event.timestamp.addingTimeInterval(-300),
             lastSeenAt: event.timestamp
         )
@@ -130,10 +131,10 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             ].joined(separator: "|")
         }
 
-        return UUID(uuidString: uuidString(from: identitySeed)) ?? UUID()
+        return UUID(uuidString: Self.uuidString(from: identitySeed)) ?? UUID()
     }
 
-    private func uuidString(from seed: String) -> String {
+    private static func uuidString(from seed: String) -> String {
         // Use full-seed hashing so that any difference in the seed (including
         // different ttyIdentifier, windowTitle, or commandLine) produces a
         // different UUID. The previous implementation used `bytes[index % n]`
@@ -178,26 +179,26 @@ public struct BuiltInCLIAdapter: CLIAdapter {
             // that text IS the signal and must be passed to the judge.
             if transcriptWasEmpty {
                 let trimmed = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
-                // If snippet matches the pre-formatted output of snippet(for: ...),
-                // it is already a status description produced by the observation
-                // pipeline. Re-judging it through judge() would create a circular
-                // feedback loop (the snippet format is derived from the status, and
-                // judge() would re-derive the same status from the snippet format).
-                // Extract the status directly from the snippet prefix instead.
-                if let status = Self.statusFromSnippetFormat(trimmed) {
-                    return ClaudeStatusJudgement(
-                        status: status,
-                        confidence: 0.88,
-                        matchedSignals: 1,
-                        dominantReason: "pre-formatted snippet, status extracted from prefix"
-                    )
-                }
                 if trimmed.isEmpty || trimmed == "❯" || trimmed == "❯ " {
                     return ClaudeStatusJudgement(
                         status: .completed,
                         confidence: 0.8,
                         matchedSignals: 1,
                         dominantReason: "empty transcript with privacy protection"
+                    )
+                }
+                // Snippet has content but transcript is empty. This can happen when
+                // the snippet is a pre-formatted status string (e.g. from a prior
+                // observation cycle that set summary = "Completed Claude Code...").
+                // Use statusFromSnippetFormat for known completion patterns to avoid
+                // re-scoring through judge() (which might not recognize the format).
+                // For other patterns, fall through to judge().
+                if let status = Self.statusFromSnippetFormat(trimmed), status == .completed {
+                    return ClaudeStatusJudgement(
+                        status: status,
+                        confidence: 0.88,
+                        matchedSignals: 1,
+                        dominantReason: "pre-formatted completion snippet"
                     )
                 }
             }
@@ -380,4 +381,35 @@ public extension BuiltInCLIAdapter {
     static let codex = BuiltInCLIAdapter(cliKind: .codex, commandTokens: ["codex"])
     static let claudeCode = BuiltInCLIAdapter(cliKind: .claudeCode, commandTokens: ["claude", "claude code"])
     static let gemini = BuiltInCLIAdapter(cliKind: .gemini, commandTokens: ["gemini"])
+
+    /// Computes a stable session ID using the same algorithm as the adapter's
+    /// stableSessionID method. This allows hook-created sessions to use the
+    /// same ID computation as AppleScript-created sessions, enabling proper
+    /// session merging when both observe the same terminal session.
+    ///
+    /// Canonical identity chain: hookSessionID > (terminalAppIdentifier + tty) > text fallback
+    /// This method implements the second tier: terminal-level identity via tty.
+    static func computeStableSessionID(
+        cliKind: CLIKind,
+        terminalAppIdentifier: String,
+        ttyIdentifier: String?
+    ) -> UUID {
+        let identitySeed: String
+        if let ttyIdentifier = ttyIdentifier, !ttyIdentifier.isEmpty {
+            identitySeed = [
+                cliKind.rawValue,
+                terminalAppIdentifier,
+                ttyIdentifier
+            ].joined(separator: "|")
+        } else {
+            // Fallback: this shouldn't happen for Claude Code sessions
+            // since Claude Code always runs in a terminal with a tty
+            identitySeed = [
+                cliKind.rawValue,
+                terminalAppIdentifier
+            ].joined(separator: "|")
+        }
+
+        return UUID(uuidString: uuidString(from: identitySeed)) ?? UUID()
+    }
 }

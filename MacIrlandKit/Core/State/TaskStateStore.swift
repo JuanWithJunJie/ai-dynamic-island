@@ -257,25 +257,20 @@ public final class TaskStateStore {
             sessionIndex = sessions.firstIndex { $0.identity.hookSessionID == hookSessionID }
         }
 
-        // Fall back to tty matching
+        // Fall back to tty matching ONLY if existing session has no hookSessionID yet.
+        // If existing session already has hookSessionID set (even if different from this event's),
+        // it is a distinct session with its own identity — do NOT use as a match.
         if sessionIndex == nil {
-            sessionIndex = sessions.firstIndex { $0.identity.ttyIdentifier == event.tty }
-            // If found by tty but session doesn't have hookSessionID yet, mark for update
-            if sessionIndex != nil && sessions[sessionIndex!].identity.hookSessionID == nil {
-                needsHookSessionIDUpdate = true
+            if let existingWithTty = sessions.first(where: { $0.identity.ttyIdentifier == event.tty }) {
+                // Only use tty match if existing session has no hookSessionID yet.
+                // If hookSessionID is already set (even if different), it's a distinct session.
+                if existingWithTty.identity.hookSessionID == nil {
+                    sessionIndex = sessions.firstIndex { $0.identity.ttyIdentifier == event.tty }
+                    needsHookSessionIDUpdate = true
+                }
+                // If existing session HAS hookSessionID set, leave sessionIndex = nil → will create new session
             }
-        }
-
-        // If no session found by hookSessionID, try tty matching only if exactly ONE session matches.
-        // Multiple tty matches (same tty, no hookSessionID) is ambiguous → create new session.
-        // No tty matches → create new session.
-        if sessionIndex == nil {
-            let ttyMatches = sessions.filter { $0.identity.ttyIdentifier == event.tty }
-            if ttyMatches.count == 1 {
-                sessionIndex = sessions.firstIndex { $0.identity.ttyIdentifier == event.tty }
-                needsHookSessionIDUpdate = true
-            }
-            // If 0 or 2+ matches, leave sessionIndex nil → will create new session below
+            // If no tty match found, sessionIndex stays nil → will create new session
         }
 
         // No existing session found — create a new hook-first session
@@ -456,9 +451,18 @@ public final class TaskStateStore {
         // when it later sees the same session.
         let terminalAppIdentifier = terminalAppIdentifier(for: event.tty)
 
+        // Compute stable ID using the same algorithm as BuiltInCLIAdapter.buildSession.
+        // This ensures hook-created and AppleScript-created sessions for the same
+        // terminal will have the same TaskSession.ID and naturally merge.
+        let stableID = BuiltInCLIAdapter.computeStableSessionID(
+            cliKind: .claudeCode,
+            terminalAppIdentifier: terminalAppIdentifier,
+            ttyIdentifier: event.tty
+        )
+
         // Build identity with hook-derived fields
         let identity = SessionIdentity(
-            id: UUID(), // Fresh UUID for hook-first session; merge via tty happens when AppleScript observes
+            id: stableID,
             cliKind: .claudeCode,
             terminalAppIdentifier: terminalAppIdentifier,
             windowIdentifier: event.tty,
@@ -714,33 +718,149 @@ public final class TaskStateStore {
         }
 
         return refreshedSessions.map { refreshedSession in
+            // Primary matching: by TaskSession.ID
             guard let existingSession = existingByID[refreshedSession.id] else {
+                // Fallback matching: when hook-created session (with hookSessionID) and
+                // AppleScript-created session (without hookSessionID) have the same tty,
+                // they are the same logical session and should merge.
+                // The hook-derived ID and hookSessionID must be preserved.
+                //
+                // Canonical identity chain: hookSessionID > (terminalAppIdentifier + tty) > text fallback
+                // This fallback implements step 2: when hookSessionID is not available in the
+                // AppleScript observation, use tty as the matching key.
+                if let hookSession = existingSessions.first(where: { existing in
+                    // Existing session must have hookSessionID set (hook-created)
+                    // Refreshed session must NOT have hookSessionID (AppleScript-created)
+                    // They must have the same tty (same logical session)
+                    existing.identity.hookSessionID != nil
+                    && refreshedSession.identity.hookSessionID == nil
+                    && existing.identity.ttyIdentifier == refreshedSession.identity.ttyIdentifier
+                    && existing.identity.ttyIdentifier != nil
+                }) {
+                    // Merge: preserve hook-derived ID and hookSessionID, merge data from refreshedSession
+                    var mergedSession = TaskSession(
+                        id: hookSession.id,  // Preserve hook-derived ID
+                        identity: SessionIdentity(
+                            id: hookSession.identity.id,
+                            cliKind: refreshedSession.identity.cliKind,
+                            terminalAppIdentifier: refreshedSession.identity.terminalAppIdentifier,
+                            windowIdentifier: refreshedSession.identity.windowIdentifier,
+                            commandLine: refreshedSession.identity.commandLine,
+                            ttyIdentifier: refreshedSession.identity.ttyIdentifier,
+                            hookSessionID: hookSession.identity.hookSessionID,  // Preserve hookSessionID
+                            sessionName: refreshedSession.identity.sessionName,
+                            startedAt: hookSession.identity.startedAt,
+                            lastSeenAt: refreshedSession.identity.lastSeenAt
+                        ),
+                        title: refreshedSession.title,
+                        status: refreshedSession.status,
+                        priority: refreshedSession.priority,
+                        confidence: refreshedSession.confidence,
+                        summary: refreshedSession.summary,
+                        bridgeTarget: refreshedSession.bridgeTarget,
+                        replyCapability: refreshedSession.replyCapability,
+                        lastActiveAt: refreshedSession.lastActiveAt,
+                        evidence: refreshedSession.evidence,
+                        recentEvents: refreshedSession.recentEvents,
+                        recentMessages: refreshedSession.recentMessages,
+                        historyEntries: hookSession.historyEntries,
+                        quickActions: refreshedSession.quickActions
+                    )
+
+                    // Preserve hook-driven completed status
+                    if hookSession.status == .completed,
+                       (refreshedSession.status == .running || refreshedSession.status == .waitingInput || refreshedSession.status == .alert) {
+                        mergedSession = TaskSession(
+                            id: mergedSession.id,
+                            identity: mergedSession.identity,
+                            title: mergedSession.title,
+                            status: .completed,
+                            priority: mergedSession.priority,
+                            confidence: mergedSession.confidence,
+                            summary: mergedSession.summary,
+                            bridgeTarget: mergedSession.bridgeTarget,
+                            replyCapability: mergedSession.replyCapability,
+                            lastActiveAt: mergedSession.lastActiveAt,
+                            evidence: mergedSession.evidence,
+                            recentEvents: mergedSession.recentEvents,
+                            recentMessages: mergedSession.recentMessages,
+                            historyEntries: mergedSession.historyEntries,
+                            quickActions: mergedSession.quickActions
+                        )
+                    }
+
+                    var mergedHistory = mergedSession.historyEntries
+                    if hookSession.status != mergedSession.status,
+                       let latestEntry = refreshedSession.historyEntries.last {
+                        mergedHistory.append(latestEntry)
+                    }
+
+                    return mergedSession.withHistoryEntries(mergedHistory)
+                }
+
+                // No match found - return refreshed session as-is (new session)
                 return refreshedSession
+            }
+
+            // Preserve hook-driven identity: if existing session has hookSessionID but
+            // refreshed session doesn't (AppleScript didn't see it), preserve hookSessionID.
+            // This ensures hook-created sessions retain their identity through merges.
+            var mergedIdentity = refreshedSession.identity
+            if existingSession.identity.hookSessionID != nil
+               && refreshedSession.identity.hookSessionID == nil {
+                mergedIdentity = SessionIdentity(
+                    id: refreshedSession.identity.id,
+                    cliKind: refreshedSession.identity.cliKind,
+                    terminalAppIdentifier: refreshedSession.identity.terminalAppIdentifier,
+                    windowIdentifier: refreshedSession.identity.windowIdentifier,
+                    commandLine: refreshedSession.identity.commandLine,
+                    ttyIdentifier: refreshedSession.identity.ttyIdentifier,
+                    hookSessionID: existingSession.identity.hookSessionID,
+                    sessionName: refreshedSession.identity.sessionName,
+                    startedAt: existingSession.identity.startedAt,
+                    lastSeenAt: refreshedSession.identity.lastSeenAt
+                )
             }
 
             // Preserve hook-driven status: if existing session is completed but observation
             // reports running/waiting/alert, keep the hook-driven completed status.
             // Alert can override completed if the existing session is NOT completed
             // (i.e., observation detected a real alert condition).
-            var mergedSession = refreshedSession
+            var mergedSession = TaskSession(
+                id: mergedIdentity.id,
+                identity: mergedIdentity,
+                title: refreshedSession.title,
+                status: refreshedSession.status,
+                priority: refreshedSession.priority,
+                confidence: refreshedSession.confidence,
+                summary: refreshedSession.summary,
+                bridgeTarget: refreshedSession.bridgeTarget,
+                replyCapability: refreshedSession.replyCapability,
+                lastActiveAt: refreshedSession.lastActiveAt,
+                evidence: refreshedSession.evidence,
+                recentEvents: refreshedSession.recentEvents,
+                recentMessages: refreshedSession.recentMessages,
+                historyEntries: refreshedSession.historyEntries,
+                quickActions: refreshedSession.quickActions
+            )
             if existingSession.status == .completed,
                (refreshedSession.status == .running || refreshedSession.status == .waitingInput || refreshedSession.status == .alert) {
                 mergedSession = TaskSession(
-                    id: refreshedSession.id,
-                    identity: refreshedSession.identity,
-                    title: refreshedSession.title,
+                    id: mergedSession.id,
+                    identity: mergedSession.identity,
+                    title: mergedSession.title,
                     status: .completed,
-                    priority: refreshedSession.priority,
-                    confidence: refreshedSession.confidence,
-                    summary: refreshedSession.summary,
-                    bridgeTarget: refreshedSession.bridgeTarget,
-                    replyCapability: refreshedSession.replyCapability,
+                    priority: mergedSession.priority,
+                    confidence: mergedSession.confidence,
+                    summary: mergedSession.summary,
+                    bridgeTarget: mergedSession.bridgeTarget,
+                    replyCapability: mergedSession.replyCapability,
                     lastActiveAt: existingSession.lastActiveAt,
-                    evidence: refreshedSession.evidence,
-                    recentEvents: refreshedSession.recentEvents,
-                    recentMessages: refreshedSession.recentMessages,
-                    historyEntries: refreshedSession.historyEntries,
-                    quickActions: refreshedSession.quickActions
+                    evidence: mergedSession.evidence,
+                    recentEvents: mergedSession.recentEvents,
+                    recentMessages: mergedSession.recentMessages,
+                    historyEntries: mergedSession.historyEntries,
+                    quickActions: mergedSession.quickActions
                 )
             }
 
