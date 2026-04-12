@@ -1164,7 +1164,8 @@ enum AppleScriptObservationParser {
                         fullWindowName: fullWindowName,
                         commandLine: commandLine,
                         ttyIdentifier: cleanedFields[2].nilIfEmpty,
-                        isBusy: parseBusyFlag(busyField)
+                        isBusy: parseBusyFlag(busyField),
+                        sessionName: cleanedFields[1]
                     ),
                     transcript: transcript
                 )

@@ -9,11 +9,26 @@ public protocol SoundPlaying: Sendable {
 public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
     private let audioEngine: AVAudioEngine
     private let mainMixer: AVAudioMixerNode
+    private var activePlayerNodes: [AVAudioPlayerNode] = []
+    private let nodesLock = NSLock()
 
     public init() {
         audioEngine = AVAudioEngine()
         mainMixer = audioEngine.mainMixerNode
         audioEngine.prepare()
+    }
+
+    /// Stop and detach all active player nodes before starting new sounds.
+    /// This prevents the AVFAudio crash that occurs when stop() is called while
+    /// sounds are still playing (dispatch_sync on already-owned queue).
+    private func stopAllActiveNodes() {
+        nodesLock.lock()
+        defer { nodesLock.unlock() }
+        for node in activePlayerNodes {
+            node.stop()
+            audioEngine.detach(node)
+        }
+        activePlayerNodes.removeAll()
     }
 
     public func play(_ cue: SoundCue) {
@@ -75,6 +90,9 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
             return
         }
 
+        // Stop any currently playing sounds before starting new one
+        stopAllActiveNodes()
+
         let sampleRate = audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
         let frameCount = AVAudioFrameCount(sampleRate * duration)
 
@@ -98,9 +116,18 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         audioEngine.attach(playerNode)
         audioEngine.connect(playerNode, to: mainMixer, format: buffer.format)
 
+        // Track this node so it can be stopped if needed
+        nodesLock.lock()
+        activePlayerNodes.append(playerNode)
+        nodesLock.unlock()
+
         playerNode.scheduleBuffer(buffer) { [weak self] in
             guard let self else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.nodesLock.lock()
+                self.activePlayerNodes.removeAll { $0 === playerNode }
+                self.nodesLock.unlock()
                 self.audioEngine.detach(playerNode)
             }
         }
@@ -128,6 +155,9 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         } catch {
             return
         }
+
+        // Stop any currently playing sounds before starting new one
+        stopAllActiveNodes()
 
         let sampleRate = audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
         let frameCount = AVAudioFrameCount(sampleRate * duration)
@@ -169,9 +199,18 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         audioEngine.attach(playerNode)
         audioEngine.connect(playerNode, to: mainMixer, format: buffer.format)
 
+        // Track this node so it can be stopped if needed
+        nodesLock.lock()
+        activePlayerNodes.append(playerNode)
+        nodesLock.unlock()
+
         playerNode.scheduleBuffer(buffer) { [weak self] in
             guard let self else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.nodesLock.lock()
+                self.activePlayerNodes.removeAll { $0 === playerNode }
+                self.nodesLock.unlock()
                 self.audioEngine.detach(playerNode)
             }
         }

@@ -290,6 +290,7 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
     public let commandLine: String
     public let ttyIdentifier: String?
     public let hookSessionID: String?  // Claude Code's internal session ID from hook events
+    public let sessionName: String  // iTerm2 session name from `name of eachSession` — includes subprocess in parentheses
     public let startedAt: Date
     public let lastSeenAt: Date
 
@@ -301,6 +302,7 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
         commandLine: String,
         ttyIdentifier: String?,
         hookSessionID: String? = nil,
+        sessionName: String = "",
         startedAt: Date,
         lastSeenAt: Date
     ) {
@@ -311,6 +313,7 @@ public struct SessionIdentity: Hashable, Codable, Sendable {
         self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
         self.hookSessionID = hookSessionID
+        self.sessionName = sessionName
         self.startedAt = startedAt
         self.lastSeenAt = lastSeenAt
     }
@@ -564,6 +567,23 @@ public struct ObservationReaderDiagnostic: Identifiable, Hashable, Codable, Send
     }
 }
 
+public enum SessionSource: String, Codable, Sendable {
+    case hookOnly
+    case appleScriptOnly
+    case merged
+
+    public var description: String {
+        switch self {
+        case .hookOnly:
+            return "hook"
+        case .appleScriptOnly:
+            return "AppleScript"
+        case .merged:
+            return "hook + AppleScript"
+        }
+    }
+}
+
 public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public let terminalAppIdentifier: String
@@ -581,6 +601,10 @@ public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sen
     public let confidence: Double
     /// The actual normalized tail text used for status judgement
     public let normalizedTail: String
+    /// Hook session ID if available (from hook events)
+    public let hookSessionID: String?
+    /// Source of this session identity
+    public let sessionSource: SessionSource
 
     public init(
         id: UUID = UUID(),
@@ -595,7 +619,9 @@ public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sen
         decisionReason: String,
         matchedSignals: Int = 0,
         confidence: Double = 0.0,
-        normalizedTail: String = ""
+        normalizedTail: String = "",
+        hookSessionID: String? = nil,
+        sessionSource: SessionSource = .appleScriptOnly
     ) {
         self.id = id
         self.terminalAppIdentifier = terminalAppIdentifier
@@ -610,6 +636,8 @@ public struct ObservationSessionDiagnostic: Identifiable, Hashable, Codable, Sen
         self.matchedSignals = matchedSignals
         self.confidence = confidence
         self.normalizedTail = normalizedTail
+        self.hookSessionID = hookSessionID
+        self.sessionSource = sessionSource
     }
 }
 
@@ -629,6 +657,48 @@ public struct ObservationDiagnostics: Hashable, Codable, Sendable {
     }
 }
 
+/// Basis for jump match in Terminal/iTerm
+public enum JumpMatchBasis: Hashable, Codable, Sendable {
+    /// Matched by TERM_SESSION_ID extracted from window name
+    case termSessionID(String)
+    /// Matched by tty device path
+    case tty(String)
+    /// Fallback match by process name (claude) in process list
+    case processFallback
+    /// Matched by iTerm session name
+    case sessionName(String)
+
+    public var description: String {
+        switch self {
+        case .termSessionID(let id):
+            return id
+        case .tty(let path):
+            return "tty \(path)"
+        case .processFallback:
+            return "process fallback (claude)"
+        case .sessionName(let name):
+            return "session name \(name)"
+        }
+    }
+}
+
+/// Diagnostic information for a jump operation
+public struct JumpDiagnostic: Hashable, Codable, Sendable {
+    public let success: Bool
+    public let matchBasis: JumpMatchBasis?
+    public let failureReason: String?
+
+    public init(
+        success: Bool,
+        matchBasis: JumpMatchBasis? = nil,
+        failureReason: String? = nil
+    ) {
+        self.success = success
+        self.matchBasis = matchBasis
+        self.failureReason = failureReason
+    }
+}
+
 public struct TerminalObservationSnapshot: Hashable, Codable, Sendable {
     public let terminalAppIdentifier: String
     public let windowTitle: String
@@ -637,6 +707,9 @@ public struct TerminalObservationSnapshot: Hashable, Codable, Sendable {
     public let commandLine: String
     public let ttyIdentifier: String?
     public let isBusy: Bool?
+    /// Session name from `name of eachSession` in iTerm2 — includes subprocess name in parentheses
+    /// e.g., "✳ Claude Code (claude)" or "⠂ Claude Code (sourcekit-lsp)"
+    public let sessionName: String
 
     public init(
         terminalAppIdentifier: String,
@@ -644,7 +717,8 @@ public struct TerminalObservationSnapshot: Hashable, Codable, Sendable {
         fullWindowName: String = "",
         commandLine: String,
         ttyIdentifier: String?,
-        isBusy: Bool? = nil
+        isBusy: Bool? = nil,
+        sessionName: String = ""
     ) {
         self.terminalAppIdentifier = terminalAppIdentifier
         self.windowTitle = windowTitle
@@ -652,6 +726,7 @@ public struct TerminalObservationSnapshot: Hashable, Codable, Sendable {
         self.commandLine = commandLine
         self.ttyIdentifier = ttyIdentifier
         self.isBusy = isBusy
+        self.sessionName = sessionName
     }
 }
 

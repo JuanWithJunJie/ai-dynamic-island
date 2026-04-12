@@ -1,55 +1,114 @@
 # MacIrland
 
-macOS AI CLI 会话观察器。观察 Claude Code 在终端里的运行状态，以 island-first 界面的形式呈现。
+macOS AI CLI 会话观察器。观察 Claude Code 在终端里的运行状态，以 island-first 界面的形式呈现在你的 mac 顶部菜单栏。
 
-## 产品形态
+## 功能特性
 
-- **Island 顶部状态层** — compact / hover expand / highlighted 三态，显示当前最高优先级会话
-- **Panel 详情层** — 点击 status bar 入口展开，展示会话列表、详情和回复能力
-- **Menu Bar / Dock** — island 不可见时的 fallback 入口
+- **顶部 Island 状态显示** — 实时显示 Claude Code 会话状态（运行中、等待输入、已完成、告警等）
+- **多会话管理** — 同时观察多个 Claude Code tab，点击即可跳转到对应终端窗口
+- **智能状态识别** — 自动分析 transcript 判断真实状态，无需猜测
+- **声音提醒** — 任务完成、等待回复、出现错误时播放提示音
+- **一键回复** — 直接从 island 向 Claude Code 会话发送指令
+- **跨终端支持** — 支持 Terminal.app 和 iTerm2
 
-## 核心功能
+## Island 界面说明
 
-- 真实 observation：Hook socket server 接收 Claude Code 生命周期事件，AppleScript 读取 Terminal/iTerm2 transcript
-- 真实 reply bridge：通过 AppleScript 向 Claude Code 终端会话发送回复
-- 状态自动判断：基于 normalized transcript tail 的 signal scoring，识别 running / waitingInput / replyAvailable / completed / alert / failed 等状态
-- 声音反馈：Chiptune 音效（任务开始、等待回复、任务完成、失败告警），hover expand 面板可开关
-- 多会话支持：Claude Code 多 tab 同时运行时，hover expand 显示所有会话，点击跳转对应 Terminal tab
+| 状态 | 图标颜色 | 含义 |
+|------|---------|------|
+| 绿色动画点 | 运行中 | Claude Code 正在执行任务 |
+| 橙色省略号 | 等待输入 | 等待你的下一步指示 |
+| 橙色对勾 | 已完成 | 任务执行完毕 |
+| 红色边框 | 告警 | 出现错误或警告 |
+
+**交互：**
+- 鼠标悬停到 island → 展开显示当前会话详情和所有会话列表
+- 点击会话行 → 跳转到对应的 Terminal/iTerm2 tab
+- 移动鼠标离开 → 收起 island
+
+## 安装
+
+### 方式一：使用已编译版本
+
+```bash
+open ~/Applications/MacIrland.app
+```
+
+如果是首次安装，需要在**系统设置 > 隐私与安全性**中允许运行。
+
+### 方式二：从源码构建
+
+```bash
+git clone https://github.com/JuanWithJunJie/ai-dynamic-island.git
+cd ai-dynamic-island
+swift build --configuration release
+# 然后将 .build/arm64-apple-macosx/release/MacIrland 打包为 app
+```
+
+### 启用 Claude Code Hook
+
+安装 hook 让 MacIrland 获得完整功能：
+
+```bash
+bash Scripts/install-hooks.sh
+```
+
+然后重启 Claude Code。
+
+### 权限授权
+
+首次运行时会提示需要以下权限：
+
+1. **自动化权限** — 用于读取 Terminal/iTerm2 会话状态和发送指令
+   - 系统设置 > 隐私与安全性 > 隐私 > 自动化
+   - 找到 MacIrland，勾选 Terminal 和 iTerm2
+
+## 使用
+
+1. 启动 MacIrland：`open ~/Applications/MacIrland.app`
+2. 打开一个 Terminal/iTerm2 窗口
+3. 启动 Claude Code：`claude` 或 `claude code`
+4. MacIrland 会自动检测并显示会话状态
+
+## 项目结构
+
+```
+MacIrlandApp/       — App 入口、Island 协调器、状态栏控制
+MacIrlandKit/       — 核心模型、服务、SwiftUI 视图
+  Core/            — TaskSession、TaskStateStore 状态管理
+  Adapters/        — CLI 适配器（Claude Code、Codex、Gemini）
+  Services/        — Observation、TerminalJump、Feedback 服务
+  Features/        — Island、Panel、Diagnostics UI 组件
+MacIrlandTests/    — 单元测试
+Scripts/           — Hook 安装脚本、开发运行脚本
+```
 
 ## 技术栈
 
 - Swift + SwiftUI + AppKit
 - `@Observable` 状态管理
-- Unix socket IPC（Hook socket server）
-- AppleScript（Terminal.app / iTerm2 observation + reply）
-- AVFoundation（Chiptune 声音合成）
+- Unix Domain Socket（Hook IPC）
+- AppleScript（Terminal/iTerm2 读写）
+- AVFoundation（Chiptune 音效合成）
 
-## 快速启动
+## 构建与测试
 
 ```bash
-cd /Users/lijunjie/Documents/AIproject/macirland
+# 构建
+swift build --package-path .
+
+# 测试
+swift test --package-path .
+
+# 开发模式运行
 ./Scripts/run-dev-app.sh
-```
-
-## 验证
-
-```bash
-swift build --package-path "/Users/lijunjie/Documents/AIproject/macirland"
-swift test --package-path "/Users/lijunjie/Documents/AIproject/macirland"
-```
-
-## 项目结构
-
-```
-MacIrlandApp/   — App lifecycle, IslandCoordinator, RefreshCoordinator, StatusBarController
-MacIrlandKit/   — Core models, adapters, services, SwiftUI views
-MacIrlandTests/ — Unit tests
-docs/           — Product specs and design docs
-Scripts/        — Hook installer, dev runner
 ```
 
 ## 当前限制
 
-- Observation 依赖 Terminal.app / iTerm2 的 accessibility 权限（需要用户手动在系统设置中授权）
-- Reply 草稿仅保存在当前 app 运行期
-- Codex / Gemini 为模拟链路，非真实 observation
+- 需要 macOS 14+
+- 仅支持 Claude Code，Codex / Gemini 为模拟链路
+- 依赖 Terminal/iTerm2 的 accessibility 权限
+
+## 许可证
+
+MIT

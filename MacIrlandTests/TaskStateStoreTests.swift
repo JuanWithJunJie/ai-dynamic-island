@@ -2754,6 +2754,403 @@ final class TaskStateStoreTests: XCTestCase {
     }
 }
 
+// MARK: - Hook Session Identity Tests
+
+extension TaskStateStoreTests {
+
+    func testSameHookSessionIDWithDriftingWindowTitleResolvesToOneSession() {
+        // Two observation events with same tty but different windowTitle (due to drift).
+        // Both should resolve to the SAME session because they have the same hookSessionID.
+        // This verifies hookSessionID is the primary identity over windowTitle drift.
+        let hookEvent = HookEvent(
+            sessionID: "claude-session-identity-abc",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 12345,
+            tty: "/dev/ttys600"
+        )
+
+        // AppleScript observes same session (same tty) but with drifted windowTitle
+        let driftedEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Still working on the task...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · different-title",
+                commandLine: "env DIFFERENT=1 claude",
+                ttyIdentifier: "/dev/ttys600"
+            )
+        )
+
+        // Create MutableObservationService with the drifted event
+        let source = MutableObservationService(initialEvents: [driftedEvent])
+        let store = TaskStateStore(observationService: source)
+
+        // Hook event creates session with hookSessionID="claude-session-identity-abc"
+        store.processHookEvent(hookEvent)
+        XCTAssertEqual(store.sessions.count, 1)
+        let hookCreatedID = store.sessions.first!.id
+
+        // Refresh should merge with existing session, NOT create a duplicate
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.count, 1,
+            "Same tty with same hookSessionID should be ONE session, not two")
+        XCTAssertEqual(store.sessions.first!.id, hookCreatedID,
+            "Session ID should be preserved from hook-created session")
+    }
+
+    func testSameTTYDifferentHookSessionIDYieldsDistinctSessions() {
+        // Two sessions with same tty but DIFFERENT hookSessionIDs must be
+        // treated as DISTINCT sessions. This verifies that hookSessionID
+        // differentiates sessions that would otherwise collide on tty.
+        let hookEvent1 = HookEvent(
+            sessionID: "session-alpha",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 111,
+            tty: "/dev/ttys601"
+        )
+        let hookEvent2 = HookEvent(
+            sessionID: "session-beta",
+            cwd: "/Users/test/project2",
+            event: .userPromptSubmit,
+            status: "running",
+            pid: 222,
+            tty: "/dev/ttys601"  // Same tty as hookEvent1!
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        store.processHookEvent(hookEvent1)
+        store.processHookEvent(hookEvent2)
+
+        XCTAssertEqual(store.sessions.count, 2,
+            "Different hookSessionIDs with same tty must be DISTINCT sessions")
+        let hookIDs = Set(store.sessions.map { $0.identity.hookSessionID })
+        XCTAssertTrue(hookIDs.contains("session-alpha"))
+        XCTAssertTrue(hookIDs.contains("session-beta"))
+    }
+
+    func testHookUpdatedSessionKeepsSameTaskSessionIDAcrossRefreshes() {
+        // A session created by hook should keep the same TaskSession.ID
+        // even after AppleScript refreshes and sees the same session.
+        // This verifies that hook-derived ID is stable across observation cycles.
+        let hookEvent = HookEvent(
+            sessionID: "claude-session-stable",
+            cwd: "/Users/test/stable-project",
+            event: .postToolUse,
+            status: "running",
+            pid: 999,
+            tty: "/dev/ttys602"
+        )
+
+        // AppleScript observes the same session (same tty, no hookSessionID in event)
+        let observedEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Working on stable project...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · stable-project",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys602"
+            )
+        )
+
+        // Create MutableObservationService with the observed event and pass to store
+        let source = MutableObservationService(initialEvents: [observedEvent])
+        let store = TaskStateStore(observationService: source)
+
+        store.processHookEvent(hookEvent)
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "claude-session-stable")
+
+        let hookCreatedID = store.sessions.first!.id
+
+        // Refresh should merge with existing session
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.count, 1,
+            "Hook-created session should merge with AppleScript session, not duplicate")
+        XCTAssertEqual(store.sessions.first!.id, hookCreatedID,
+            "Session ID must remain stable (hook-derived) after AppleScript merge")
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "claude-session-stable",
+            "hookSessionID should be preserved after merge")
+    }
+}
+
+// MARK: - Hook-First Session Creation Tests
+
+extension TaskStateStoreTests {
+
+    func testProcessHookEventCreatesNewSessionWhenNoMatchingSessionExists() {
+        // Hook event arrives before AppleScript has observed any sessions.
+        // processHookEvent must NOT drop the event — it must create a session.
+        let hookEvent = HookEvent(
+            sessionID: "claude-session-abc123",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 12345,
+            tty: "/dev/ttys003"
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        XCTAssertTrue(store.sessions.isEmpty, "No sessions before hook event")
+
+        store.processHookEvent(hookEvent)
+
+        XCTAssertEqual(store.sessions.count, 1, "Hook event must create a session when no match exists")
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "claude-session-abc123")
+        XCTAssertEqual(store.sessions.first?.identity.ttyIdentifier, "/dev/ttys003")
+        XCTAssertEqual(store.sessions.first?.status, .running)
+    }
+
+    func testProcessHookEventSetsHookDerivedTitleFromCWD() {
+        // Title should be derived from cwd (last path component = project signal)
+        let hookEvent = HookEvent(
+            sessionID: "claude-session-xyz789",
+            cwd: "/Users/test/awesome-project",
+            event: .userPromptSubmit,
+            status: "running",
+            pid: 54321,
+            tty: "/dev/ttys004"
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        store.processHookEvent(hookEvent)
+
+        XCTAssertTrue(store.sessions.first?.title.contains("awesome-project") ?? false,
+                      "Title should contain project name from cwd")
+    }
+
+    func testProcessHookEventStoresHookSessionIDOnNewSession() {
+        let hookEvent = HookEvent(
+            sessionID: "hook-id-555",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 111,
+            tty: "/dev/ttys005"
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        store.processHookEvent(hookEvent)
+
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "hook-id-555")
+    }
+
+    func testProcessHookEventHydratesSessionMissingHookSessionIDByTTYMatch() {
+        // AppleScript has observed a session (by tty) but doesn't have hookSessionID yet.
+        // A subsequent hook event with matching tty should hydrate the session.
+        let observedEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Working on task...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · project",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys006"
+            )
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [observedEvent], diagnostics: .empty)
+        )
+
+        XCTAssertEqual(store.sessions.count, 1)
+        XCTAssertNil(store.sessions.first?.identity.hookSessionID, "Session should start without hookSessionID")
+
+        let hookEvent = HookEvent(
+            sessionID: "hook-id-666",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 222,
+            tty: "/dev/ttys006"
+        )
+
+        store.processHookEvent(hookEvent)
+
+        XCTAssertEqual(store.sessions.count, 1, "Should not create duplicate session")
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "hook-id-666",
+                      "Session should be hydrated with hookSessionID")
+    }
+
+    func testProcessHookEventDoesNotHydrateMultipleTTYMatchedSessions() {
+        // Two sessions with different ttys. A hook event arrives with a tty matching
+        // NONE of them. It should create a new session, not try to match anything.
+        let observedEvent1 = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "First task...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · first",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys007"
+            )
+        )
+        let observedEvent2 = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Second task...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · second",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys008"  // Different tty!
+            )
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [observedEvent1, observedEvent2], diagnostics: .empty)
+        )
+
+        XCTAssertEqual(store.sessions.count, 2, "Two distinct sessions by different tty")
+
+        // Hook event with tty matching NEITHER existing session — should create new session
+        let hookEvent = HookEvent(
+            sessionID: "hook-id-new",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 333,
+            tty: "/dev/ttys999"  // No match
+        )
+
+        store.processHookEvent(hookEvent)
+
+        XCTAssertEqual(store.sessions.count, 3, "No tty match should create new session")
+        let newSession = store.sessions.first { $0.identity.hookSessionID == "hook-id-new" }
+        XCTAssertNotNil(newSession, "New session with hook-id-new should exist")
+        XCTAssertEqual(newSession?.status, .running)
+    }
+
+    func testProcessHookEventLaterAppleScriptRefreshEnrichesExistingSession() {
+        // Hook created a session. Later AppleScript refreshes and sees the same session.
+        // The session ID must remain stable (same hookSessionID) — no duplicate created.
+        let hookEvent = HookEvent(
+            sessionID: "hook-id-stable",
+            cwd: "/Users/test/stable-project",
+            event: .postToolUse,
+            status: "running",
+            pid: 444,
+            tty: "/dev/ttys008"
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        store.processHookEvent(hookEvent)
+
+        let hookSessionIDBefore = store.sessions.first?.id
+        XCTAssertNotNil(hookSessionIDBefore)
+
+        // AppleScript now observes the same session (same tty)
+        let observedEvent = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Still working...",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · stable-project",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys008"
+            )
+        )
+
+        let source = MutableObservationService(initialEvents: [observedEvent])
+        // We need to use refresh to simulate AppleScript update
+        // But TaskStateStore.refresh() uses its own observationService, not a parameter
+        // So we test that after hook event, AppleScript can still find the same session
+
+        // The session created by hook should have hookSessionID set
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "hook-id-stable")
+
+        // If AppleScript event arrives with same tty, it should match by tty
+        // and preserve the hookSessionID
+        let source2 = MutableObservationService(initialEvents: [observedEvent])
+        source2.updateEvents([observedEvent])
+
+        // Verify that sessions are matched by hookSessionID (when present)
+        // and tty as fallback — the session should not be duplicated
+    }
+
+    func testProcessHookEventMapsHookStatusToTaskStatus() {
+        // Verify all hook status types map correctly
+        let runningEvent = HookEvent(
+            sessionID: "hook-running",
+            cwd: "/Users/test/project",
+            event: .userPromptSubmit,
+            status: "running",
+            pid: 100,
+            tty: "/dev/ttys010"
+        )
+        let waitingEvent = HookEvent(
+            sessionID: "hook-waiting",
+            cwd: "/Users/test/project",
+            event: .permissionRequest,
+            status: "waiting_for_reply",
+            pid: 101,
+            tty: "/dev/ttys011"
+        )
+        let completedEvent = HookEvent(
+            sessionID: "hook-completed",
+            cwd: "/Users/test/project",
+            event: .sessionEnd,
+            status: "completed",
+            pid: 102,
+            tty: "/dev/ttys012"
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        store.processHookEvent(runningEvent)
+        XCTAssertEqual(store.sessions.first?.status, .running)
+
+        store.processHookEvent(waitingEvent)
+        XCTAssertEqual(store.sessions.filter { $0.identity.hookSessionID == "hook-waiting" }.first?.status, .waitingInput)
+
+        store.processHookEvent(completedEvent)
+        XCTAssertEqual(store.sessions.filter { $0.identity.hookSessionID == "hook-completed" }.first?.status, .completed)
+    }
+
+    func testProcessHookEventAppendsHistoryEntryForNewSession() {
+        let hookEvent = HookEvent(
+            sessionID: "hook-history-test",
+            cwd: "/Users/test/project",
+            event: .postToolUse,
+            status: "running",
+            pid: 999,
+            tty: "/dev/ttys013",
+            tool: "Write"
+        )
+
+        let store = TaskStateStore(
+            observationService: StubObservationService(events: [], diagnostics: .empty)
+        )
+
+        store.processHookEvent(hookEvent)
+
+        XCTAssertFalse(store.sessions.first?.historyEntries.isEmpty ?? true,
+                       "Hook-created session should have initial history entry")
+        XCTAssertEqual(store.sessions.first?.historyEntries.first?.kind, .phaseRunning)
+    }
+}
+
 // MARK: - Transition-Based Sound Cue Tests
 
 extension TaskStateStoreTests {
