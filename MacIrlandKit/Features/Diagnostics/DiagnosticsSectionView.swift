@@ -160,6 +160,22 @@ public struct DiagnosticsSectionView: View {
                     observationField("window", value: sessionDiagnostic.windowTitle)
                     observationField("command", value: sessionDiagnostic.commandLine)
                     observationField("tty", value: sessionDiagnostic.ttyIdentifier ?? "(无 tty)")
+                    if let hookSessionID = sessionDiagnostic.hookSessionID {
+                        observationField("hookSessionID", value: hookSessionID)
+                    }
+                    HStack(spacing: 8) {
+                        let sourceColor: Color = {
+                            switch sessionDiagnostic.sessionSource {
+                            case .hookOnly:
+                                return .green
+                            case .appleScriptOnly:
+                                return .blue
+                            case .merged:
+                                return .orange
+                            }
+                        }()
+                        MetaChip(sessionDiagnostic.sessionSource.description, systemImage: "link", tint: sourceColor)
+                    }
                     observationField("reason", value: sessionDiagnostic.decisionReason)
                     observationField("raw preview", value: sessionDiagnostic.transcriptPreview)
                     observationField("normalized preview", value: sessionDiagnostic.normalizedTranscriptPreview)

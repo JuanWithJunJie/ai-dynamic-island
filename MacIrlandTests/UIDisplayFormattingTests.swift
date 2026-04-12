@@ -574,4 +574,138 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertNotEqual(TaskStatus.replyAvailable.animatedStatus, .idle)
         XCTAssertNotEqual(TaskStatus.replyAvailable.animatedStatus, .running)
     }
+
+    // MARK: - Session Identity Diagnostics
+
+    func testObservationSessionDiagnosticExposesHookSessionID() {
+        let diagnostic = ObservationSessionDiagnostic(
+            terminalAppIdentifier: "com.apple.Terminal",
+            windowTitle: "Claude Code",
+            commandLine: "claude",
+            ttyIdentifier: "ttys005",
+            transcriptPreview: "Hello",
+            normalizedTranscriptPreview: "Hello",
+            recognizedCLIKind: .claudeCode,
+            inferredStatus: .running,
+            decisionReason: "matched claude code",
+            matchedSignals: 1,
+            confidence: 0.85,
+            normalizedTail: "Hello",
+            hookSessionID: "hook-abc123"
+        )
+
+        XCTAssertEqual(diagnostic.hookSessionID, "hook-abc123")
+    }
+
+    func testObservationSessionDiagnosticShowsSourceAsHookOnly() {
+        let diagnostic = ObservationSessionDiagnostic(
+            terminalAppIdentifier: "com.apple.Terminal",
+            windowTitle: "Claude Code",
+            commandLine: "claude",
+            ttyIdentifier: "ttys005",
+            transcriptPreview: "Hello",
+            normalizedTranscriptPreview: "Hello",
+            recognizedCLIKind: .claudeCode,
+            inferredStatus: .running,
+            decisionReason: "matched claude code",
+            matchedSignals: 1,
+            confidence: 0.85,
+            normalizedTail: "Hello",
+            hookSessionID: "hook-abc123",
+            sessionSource: .hookOnly
+        )
+
+        XCTAssertEqual(diagnostic.sessionSource, .hookOnly)
+        XCTAssertEqual(diagnostic.sessionSource.description, "hook")
+    }
+
+    func testObservationSessionDiagnosticShowsSourceAsAppleScriptOnly() {
+        let diagnostic = ObservationSessionDiagnostic(
+            terminalAppIdentifier: "com.apple.Terminal",
+            windowTitle: "Claude Code",
+            commandLine: "claude",
+            ttyIdentifier: "ttys005",
+            transcriptPreview: "Hello",
+            normalizedTranscriptPreview: "Hello",
+            recognizedCLIKind: .claudeCode,
+            inferredStatus: .running,
+            decisionReason: "matched claude code",
+            matchedSignals: 1,
+            confidence: 0.85,
+            normalizedTail: "Hello",
+            hookSessionID: nil,
+            sessionSource: .appleScriptOnly
+        )
+
+        XCTAssertEqual(diagnostic.sessionSource, .appleScriptOnly)
+        XCTAssertEqual(diagnostic.sessionSource.description, "AppleScript")
+    }
+
+    func testObservationSessionDiagnosticShowsSourceAsMerged() {
+        let diagnostic = ObservationSessionDiagnostic(
+            terminalAppIdentifier: "com.apple.Terminal",
+            windowTitle: "Claude Code",
+            commandLine: "claude",
+            ttyIdentifier: "ttys005",
+            transcriptPreview: "Hello",
+            normalizedTranscriptPreview: "Hello",
+            recognizedCLIKind: .claudeCode,
+            inferredStatus: .running,
+            decisionReason: "matched claude code",
+            matchedSignals: 1,
+            confidence: 0.85,
+            normalizedTail: "Hello",
+            hookSessionID: "hook-abc123",
+            sessionSource: .merged
+        )
+
+        XCTAssertEqual(diagnostic.sessionSource, .merged)
+        XCTAssertEqual(diagnostic.sessionSource.description, "hook + AppleScript")
+    }
+
+    // MARK: - Jump Diagnostics
+
+    func testJumpDiagnosticExposesMatchBasis() {
+        let jumpDiagnostic = JumpDiagnostic(
+            success: true,
+            matchBasis: .termSessionID("TERM_SESSION_ID=abc123"),
+            failureReason: nil
+        )
+
+        XCTAssertTrue(jumpDiagnostic.success)
+        XCTAssertEqual(jumpDiagnostic.matchBasis?.description, "TERM_SESSION_ID=abc123")
+        XCTAssertNil(jumpDiagnostic.failureReason)
+    }
+
+    func testJumpDiagnosticExposesFailureReason() {
+        let jumpDiagnostic = JumpDiagnostic(
+            success: false,
+            matchBasis: nil,
+            failureReason: "AppleScript error: Permission denied"
+        )
+
+        XCTAssertFalse(jumpDiagnostic.success)
+        XCTAssertNil(jumpDiagnostic.matchBasis)
+        XCTAssertEqual(jumpDiagnostic.failureReason, "AppleScript error: Permission denied")
+    }
+
+    func testJumpDiagnosticMatchBasisDescribesTTYBasedMatch() {
+        let jumpDiagnostic = JumpDiagnostic(
+            success: true,
+            matchBasis: .tty("/dev/ttys005"),
+            failureReason: nil
+        )
+
+        XCTAssertEqual(jumpDiagnostic.matchBasis?.description, "tty /dev/ttys005")
+    }
+
+    func testJumpDiagnosticMatchBasisDescribesProcessFallbackMatch() {
+        let jumpDiagnostic = JumpDiagnostic(
+            success: true,
+            matchBasis: .processFallback,
+            failureReason: nil
+        )
+
+        XCTAssertEqual(jumpDiagnostic.matchBasis?.description, "process fallback (claude)")
+    }
 }
