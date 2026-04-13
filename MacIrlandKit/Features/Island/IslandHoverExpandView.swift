@@ -37,33 +37,13 @@ public struct IslandHoverExpandView: View {
             Divider()
                 .background(MacIrlandPalette.border.opacity(0.4))
 
-            // === Session Detail (preferred island session) ===
-            if let session = store.hoverExpandPrimarySession {
-                HoverExpandSessionDetail(
-                    session: session,
-                    onJumpToSession: onJumpToSession,
-                    onContinue: onContinueAction,
-                    onHoverChanged: onHoverChanged
-                )
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
-                .onHover { hovering in
-                    onHoverChanged(hovering)
-                }
-
-                Divider()
-                    .background(MacIrlandPalette.border.opacity(0.4))
-            }
-
-            // === Session List ===
-            if !store.hoverExpandSecondarySessions.isEmpty {
-                HoverExpandSessionList(
-                    sessions: store.hoverExpandSecondarySessions,
-                    preferredSessionID: preferredSessionID,
-                    onJumpToSession: onJumpToSession,
-                    onHoverChanged: onHoverChanged
-                )
-            }
+            // === All Sessions List ===
+            HoverExpandSessionList(
+                sessions: store.hoverExpandSessions,
+                preferredSessionID: preferredSessionID,
+                onJumpToSession: onJumpToSession,
+                onHoverChanged: onHoverChanged
+            )
         }
         .frame(width: 520)
         .background(MacIrlandPalette.mockupPanelBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -110,7 +90,6 @@ private struct HoverExpandStatusStrip: View {
             // Control area: sound toggle | count
             HStack(spacing: 8) {
                 SoundToggleButton(isOn: store.soundMode != .mute)
-                    .opacity(isHovered ? 1 : 0)
                     .onTapGesture {
                         onSoundToggle()
                     }
@@ -188,7 +167,7 @@ private struct HoverExpandSessionDetail: View {
                     detailIcon
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(session.title)
+                        Text(detailTitle)
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
@@ -202,6 +181,14 @@ private struct HoverExpandSessionDetail: View {
                     Spacer(minLength: 8)
 
                     VStack(alignment: .trailing, spacing: 6) {
+                        if let terminalLabel = terminalTypeLabel {
+                            Text(terminalLabel.text)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(terminalLabel.color)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(terminalLabel.bg.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                        }
                         StatusChip(status: session.status)
                         Text("↗ 跳转")
                             .font(.system(size: 10, weight: .semibold))
@@ -215,30 +202,7 @@ private struct HoverExpandSessionDetail: View {
             .buttonStyle(.plain)
             .contentShape(Rectangle())
 
-            // Recent input bubble (if available)
-            if let recentMessage = session.recentMessages.first, !recentMessage.text.isEmpty {
-                HStack(spacing: 6) {
-                    Text("Input")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.39, green: 0.39, blue: 0.42))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(MacIrlandPalette.mockupPanelBg, in: Capsule())
-
-                    Text(recentMessage.text)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color(red: 0.82, green: 0.82, blue: 0.84))
-                        .lineLimit(1)
-                }
-                .padding(8)
-                .background(MacIrlandPalette.mockupPanelBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-
-            // Events timeline
-            HoverExpandEventsTimeline(session: session)
-
             // Continue button (if applicable and not completed)
-            // Don't show continue button for completed sessions - only show when hovering
             if session.replyCapability.canSendSafely && session.status != .completed {
                 HStack(spacing: 10) {
                     Button(action: onContinue) {
@@ -255,10 +219,7 @@ private struct HoverExpandSessionDetail: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(MacIrlandPalette.mockupGreen)
 
-                    Text("点击主卡片 → 跳转 Terminal")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(MacIrlandPalette.tertiaryText)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    Spacer()
                 }
             }
         }
@@ -287,76 +248,72 @@ private struct HoverExpandSessionDetail: View {
         }
     }
 
-    private var sessionDetailSubtitle: String {
+    private var detailTitle: String {
+        // For iTerm2, sessionName is the actual session name (e.g., "PlanApp")
+        // For Terminal, sessionName may be empty, fall back to path extraction
+        // Extract project name (same logic as rowTitle)
+        let projectName: String
+        if let range = session.title.range(of: ": ") {
+            projectName = String(session.title[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+        } else if !session.title.isEmpty && session.title != "Claude Code" && !session.title.hasPrefix("Running Claude Code") && !session.title.hasPrefix("Completed Claude Code") {
+            projectName = session.title
+        } else if !session.identity.sessionName.isEmpty && session.identity.sessionName != "⠂ Claude Code" && session.identity.sessionName != "✳ Claude Code" && !session.identity.sessionName.contains("Claude Code") {
+            projectName = session.identity.sessionName
+        } else {
+            let components = session.identity.commandLine.split(separator: "/")
+            if let last = components.last {
+                projectName = String(last).trimmingCharacters(in: .whitespaces)
+            } else {
+                projectName = session.title
+            }
+        }
+        // Add status indicator prefix
+        let indicator: String
         switch session.status {
         case .running:
-            return "运行中 · \(session.sourceCLI.displayName)"
-        case .waitingInput:
-            return "等待输入 · \(session.sourceCLI.displayName)"
-        case .replyAvailable:
-            return "可回复 · \(session.sourceCLI.displayName)"
+            indicator = "● "
+        case .waitingInput, .replyAvailable:
+            indicator = "◐ "
         case .completed:
-            return "已完成 · \(session.sourceCLI.displayName)"
-        case .alert:
-            return "异常 · \(session.sourceCLI.displayName)"
+            indicator = "✓ "
+        case .alert, .failed:
+            indicator = "✕ "
         default:
-            return "\(session.status.label) · \(session.sourceCLI.displayName)"
+            indicator = ""
         }
-    }
-}
-
-// MARK: - Events Timeline
-
-private struct HoverExpandEventsTimeline: View {
-    let session: TaskSession
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text("Events")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(red: 0.28, green: 0.28, blue: 0.29))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(MacIrlandPalette.mockupPanelBg, in: Capsule())
-
-            HStack(spacing: 4) {
-                ForEach(Array(timelineEvents.enumerated()), id: \.offset) { index, event in
-                    Circle()
-                        .fill(event.color)
-                        .frame(width: 6, height: 6)
-
-                    Text(event.text)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color(red: 0.39, green: 0.39, blue: 0.42))
-
-                    if index < timelineEvents.count - 1 {
-                        Text("→")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(Color(red: 0.23, green: 0.23, blue: 0.24))
-                    }
-                }
-            }
-        }
-        .padding(0)
+        return indicator + projectName
     }
 
-    private var timelineEvents: [(text: String, color: Color)] {
-        // Show last 3 events from the session
-        var events: [(text: String, color: Color)] = []
-
-        for entry in session.recentMessages.prefix(3) {
-            if entry.kind == .user {
-                events.append((text: "输入", color: MacIrlandPalette.mockupGreen))
-            } else {
-                events.append((text: "回复", color: MacIrlandPalette.mockupOrange))
-            }
+    private var terminalTypeLabel: (text: String, color: Color, bg: Color)? {
+        let identifier = session.identity.terminalAppIdentifier
+        switch identifier {
+        case "com.apple.Terminal":
+            return (text: "Terminal", color: MacIrlandPalette.mockupOrange, bg: MacIrlandPalette.mockupOrange)
+        case "com.googlecode.iterm2":
+            return (text: "iTerm2", color: MacIrlandPalette.mockupBlue, bg: MacIrlandPalette.mockupBlue)
+        default:
+            return nil
         }
+    }
 
-        if events.isEmpty {
-            events.append((text: "开始", color: MacIrlandPalette.mockupOrange))
+    private var sessionDetailSubtitle: String {
+        let tty = session.identity.ttyIdentifier ?? "ttys"
+        let base: String
+        switch session.status {
+        case .running:
+            base = "运行中"
+        case .waitingInput:
+            base = "等待输入"
+        case .replyAvailable:
+            base = "可回复"
+        case .completed:
+            base = "已完成"
+        case .alert:
+            base = "异常"
+        default:
+            base = session.status.label
         }
-
-        return events
+        return "\(base) · \(tty)"
     }
 }
 
@@ -399,23 +356,6 @@ private struct HoverExpandSessionList: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
-                Text("其他会话")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color(red: 0.56, green: 0.56, blue: 0.58))
-
-                Spacer()
-
-                Text("\(sessions.count) 个")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(MacIrlandPalette.tertiaryText)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-
-            Divider()
-                .background(MacIrlandPalette.border.opacity(0.4))
-
             // Rows
             ForEach(sessions.prefix(5)) { session in
                 HoverExpandSessionRow(
@@ -450,18 +390,27 @@ private struct HoverExpandSessionRow: View {
             rowIcon
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.title)
+                Text(rowTitle)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
 
-                Text("\(session.sourceCLI.displayName) · \(session.identity.ttyIdentifier ?? "ttys")")
+                Text(rowSubtitle)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(MacIrlandPalette.tertiaryText)
                     .lineLimit(1)
             }
 
             Spacer()
+
+            if let terminalLabel = terminalTypeLabel {
+                Text(terminalLabel.text)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(terminalLabel.color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(terminalLabel.bg.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+            }
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(session.status.label)
@@ -526,6 +475,47 @@ private struct HoverExpandSessionRow: View {
         case .alert, .failed: return .red
         default: return .gray
         }
+    }
+
+    private var terminalTypeLabel: (text: String, color: Color, bg: Color)? {
+        let identifier = session.identity.terminalAppIdentifier
+        switch identifier {
+        case "com.apple.Terminal":
+            return (text: "Terminal", color: MacIrlandPalette.mockupOrange, bg: MacIrlandPalette.mockupOrange)
+        case "com.googlecode.iterm2":
+            return (text: "iTerm2", color: MacIrlandPalette.mockupBlue, bg: MacIrlandPalette.mockupBlue)
+        default:
+            return nil
+        }
+    }
+
+    private var rowTitle: String {
+        // For iTerm2, sessionName is the actual session name (e.g., "PlanApp")
+        // Prefer hook-derived title (project name from cwd) over sessionName
+        // Hook-derived title looks like "PlanApp" or extracted from "Running Claude Code terminal session: macirland"
+        if let range = session.title.range(of: ": ") {
+            let extracted = String(session.title[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !extracted.isEmpty && extracted != "Claude Code" {
+                return extracted
+            }
+        }
+        // If hook-derived title is valid (not "Claude Code" and not empty), use it
+        if !session.title.isEmpty && session.title != "Claude Code" && !session.title.hasPrefix("Running Claude Code") && !session.title.hasPrefix("Completed Claude Code") {
+            return session.title
+        }
+        // Fall back to sessionName only if title didn't yield a valid project name
+        if !session.identity.sessionName.isEmpty && session.identity.sessionName != "⠂ Claude Code" && session.identity.sessionName != "✳ Claude Code" && !session.identity.sessionName.contains("Claude Code") {
+            return session.identity.sessionName
+        }
+        let components = session.identity.commandLine.split(separator: "/")
+        if let last = components.last {
+            return String(last).trimmingCharacters(in: .whitespaces)
+        }
+        return session.title
+    }
+
+    private var rowSubtitle: String {
+        session.identity.ttyIdentifier ?? "ttys"
     }
 
     private var rowBackgroundColor: Color {
