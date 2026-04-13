@@ -211,14 +211,16 @@ final class AppLaunchSupportTests: XCTestCase {
         XCTAssertTrue(source.contains("1.0"))
     }
 
-    func testHoverExpandUsesPrimaryClaudeSessionForStatusStripAndDetailJump() throws {
+    func testHoverExpandUsesUniformSessionListLayout() throws {
         let source = try String(contentsOfFile: "MacIrlandKit/Features/Island/IslandHoverExpandView.swift", encoding: .utf8)
 
-        XCTAssertTrue(source.contains("store.hoverExpandPrimarySession"))
+        // Hover expand shows all sessions as uniform list (no separate detail section)
+        XCTAssertTrue(source.contains("store.hoverExpandSessions"))
         XCTAssertTrue(source.contains("let onJumpToSession: (TaskSession.ID) -> Void"))
-        XCTAssertTrue(source.contains("HoverExpandSessionDetail("))
-        XCTAssertTrue(source.contains("onJumpToSession: onJumpToSession"))
+        XCTAssertTrue(source.contains("HoverExpandSessionRow("))
         XCTAssertTrue(source.contains(".onTapGesture"))
+        XCTAssertTrue(source.contains("sessionName"))  // Uses sessionName for iTerm2 titles
+        XCTAssertTrue(source.contains("terminalTypeLabel"))  // Shows terminal type badge
     }
 
     func testAppDelegateStartsRefreshCoordinatorAtLaunch() throws {

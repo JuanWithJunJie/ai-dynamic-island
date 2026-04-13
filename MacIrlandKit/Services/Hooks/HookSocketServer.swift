@@ -212,8 +212,6 @@ public final class HookSocketServer: @unchecked Sendable {
         _ = fcntl(clientFD, F_SETFL, flags | O_NONBLOCK)
 
         let clientHandle = FileHandle(fileDescriptor: clientFD, closeOnDealloc: false)
-        fputs("HOOK_DEBUG: accepted client fd=\(clientFD)\n", stderr)
-        fflush(stderr)
 
         // Set up a dispatch source to monitor the client socket for data
         let clientSource = DispatchSource.makeReadSource(fileDescriptor: clientFD, queue: queue)
@@ -227,6 +225,12 @@ public final class HookSocketServer: @unchecked Sendable {
         }
         clientSource.resume()
 
+        // Immediately try to read any data that arrived before the dispatch source was set up.
+        // On Unix sockets, data can arrive at the kernel buffer before accept() returns.
+        // This pre-read ensures we don't lose events that arrive during source setup.
+        var immediateBuf = [UInt8](repeating: 0, count: 65536)
+        let immediateRead = recv(clientFD, &immediateBuf, immediateBuf.count, 0)
+
         let handleID = ObjectIdentifier(clientHandle)
         lock.lock()
         clientSources[handleID] = clientSource
@@ -235,13 +239,52 @@ public final class HookSocketServer: @unchecked Sendable {
 
         hookLogger.info("new client handle created with dispatch source")
 
+        // If data was pre-read, process it immediately in acceptConnections.
+        // This avoids a race where the dispatch source fires but the data was already consumed.
+        if immediateRead > 0 {
+            let preReadData = Data(bytes: immediateBuf, count: immediateRead)
+            processReceivedData(preReadData, handle: clientHandle, handleID: handleID)
+        }
+
         let handler = connectionHandler
         DispatchQueue.main.async {
             handler?(true)
         }
     }
 
-    private func handleClientData(_ fd: Int32, handle: FileHandle) {
+    /// Processes received data by buffering and decoding hook events.
+    private func processReceivedData(_ data: Data, handle: FileHandle, handleID: ObjectIdentifier) {
+        // Append to per-connection buffer
+        lock.lock()
+        let existingBuffer = receiveBuffers[handleID] ?? Data()
+        receiveBuffers[handleID] = existingBuffer + data
+        lock.unlock()
+
+        // Process buffered data
+        let messages = parseMessages(handleID: handleID)
+
+        let decoder = JSONDecoder()
+        for message in messages {
+            do {
+                let event = try decoder.decode(HookEvent.self, from: message)
+                hookLogger.info("decoded event=\(String(describing: event.event)) sessionID=\(event.sessionID) tty=\(event.tty)")
+                if event.event == .permissionRequest {
+                    lock.lock()
+                    let expiration = Date().addingTimeInterval(permissionTimeoutSeconds)
+                    pendingPermissions[event.sessionID] = (handle, expiration)
+                    lock.unlock()
+                }
+                let handler = self.eventHandler
+                DispatchQueue.main.async {
+                    handler?(event)
+                }
+            } catch {
+                hookLogger.error("decode error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func handleClientData(_ fd: Int32, handle: FileHandle, preReadData: Data? = nil) {
         let handleID = ObjectIdentifier(handle)
 
         // Check if this source is still registered
@@ -253,16 +296,19 @@ public final class HookSocketServer: @unchecked Sendable {
             return
         }
 
-        // Use recv directly on raw fd to avoid FileHandle issues
-        var recvBuffer = [UInt8](repeating: 0, count: 65536)
-        let bytesRead = recv(fd, &recvBuffer, recvBuffer.count, 0)
+        var incoming = preReadData ?? Data()
 
-        if bytesRead <= 0 {
-            cancelClientSource(for: handle)
-            return
+        // If no pre-read data, use recv to read from socket
+        if incoming.isEmpty {
+            var recvBuffer = [UInt8](repeating: 0, count: 65536)
+            let bytesRead = recv(fd, &recvBuffer, recvBuffer.count, 0)
+
+            if bytesRead <= 0 {
+                cancelClientSource(for: handle)
+                return
+            }
+            incoming = Data(bytes: recvBuffer, count: bytesRead)
         }
-
-        let incoming = Data(bytes: recvBuffer, count: bytesRead)
 
         // Append to per-connection buffer
         lock.lock()

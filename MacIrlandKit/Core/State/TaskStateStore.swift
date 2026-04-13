@@ -217,6 +217,7 @@ public final class TaskStateStore {
             sessionResolver.resolveSessions(from: latestEvents, using: registry)
         )
         let mergedSessions = mergeHistory(from: sessions, into: refreshedSessions)
+
         observationDiagnostics = snapshot.diagnostics
         capabilityStatus = capabilityStatus(for: latestEvents, resolvedSessions: mergedSessions)
         sessions = mergedSessions
@@ -234,19 +235,6 @@ public final class TaskStateStore {
     /// This method finds the session by hookSessionID or tty identifier, updates its status,
     /// and triggers appropriate sound cues.
     public func processHookEvent(_ event: HookEvent) {
-        // Debug logging
-        var logLines = ["processHookEvent: sessionID=\(event.sessionID) tty=\(event.tty) event=\(String(describing: event.event)) hookStatus=\(String(describing: event.hookStatus)) sessionsCount=\(sessions.count)"]
-        for (i, s) in sessions.enumerated() {
-            logLines.append("  session[\(i)]: tty=\(s.identity.ttyIdentifier ?? "nil") hookSessionID=\(s.identity.hookSessionID ?? "nil") status=\(s.status)")
-        }
-        let logText = logLines.joined(separator: "\n") + "\n"
-        if let data = logText.data(using: .utf8),
-           let file = FileHandle(forWritingAtPath: "/tmp/macirland-hook-debug.log") {
-            file.seekToEndOfFile()
-            file.write(data)
-            file.closeFile()
-        }
-
         // Find session by hookSessionID first (exact match on Claude Code session ID)
         // Then fall back to tty matching
         var sessionIndex: Int?
@@ -275,14 +263,6 @@ public final class TaskStateStore {
 
         // No existing session found — create a new hook-first session
         guard let idx = sessionIndex else {
-            // Debug logging
-            if let data = "  -> Creating new hook-first session\n".data(using: .utf8),
-               let file = FileHandle(forWritingAtPath: "/tmp/macirland-hook-debug.log") {
-                file.seekToEndOfFile()
-                file.write(data)
-                file.closeFile()
-            }
-
             let newSession = createHookFirstSession(from: event)
             var updatedSessions = sessions
             updatedSessions.append(newSession)
@@ -309,6 +289,10 @@ public final class TaskStateStore {
             newStatus = .completed
         }
 
+        // Derive title from cwd (last path component = project name)
+        let projectName = URL(fileURLWithPath: event.cwd).lastPathComponent
+        let derivedTitle = projectName.isEmpty ? "Claude Code" : projectName
+
         // Build updated session
         var updatedSession = session
 
@@ -326,15 +310,27 @@ public final class TaskStateStore {
                 startedAt: session.identity.startedAt,
                 lastSeenAt: session.identity.lastSeenAt
             )
+            let newBridgeTarget: BridgeTarget?
+            if let bt = session.bridgeTarget {
+                newBridgeTarget = BridgeTarget(
+                    cliKind: bt.cliKind,
+                    sessionID: bt.sessionID,
+                    terminalContext: bt.terminalContext,
+                    channelType: bt.channelType,
+                    displayName: "Claude Code · \(derivedTitle)"
+                )
+            } else {
+                newBridgeTarget = nil
+            }
             updatedSession = TaskSession(
                 id: session.id,
                 identity: updatedIdentity,
-                title: session.title,
+                title: derivedTitle,
                 status: newStatus,
                 priority: session.priority,
                 confidence: session.confidence,
-                summary: session.summary,
-                bridgeTarget: session.bridgeTarget,
+                summary: "\(event.status) — \(event.cwd)",
+                bridgeTarget: newBridgeTarget,
                 replyCapability: session.replyCapability,
                 lastActiveAt: Date(),
                 evidence: session.evidence,
@@ -344,15 +340,29 @@ public final class TaskStateStore {
                 quickActions: session.quickActions
             )
         } else {
+            // Update title if cwd-derived name differs from current title
+            let titleChanged = derivedTitle != session.title
+            let newBridgeTarget: BridgeTarget?
+            if let bt = session.bridgeTarget {
+                newBridgeTarget = BridgeTarget(
+                    cliKind: bt.cliKind,
+                    sessionID: bt.sessionID,
+                    terminalContext: bt.terminalContext,
+                    channelType: bt.channelType,
+                    displayName: titleChanged ? "Claude Code · \(derivedTitle)" : bt.displayName
+                )
+            } else {
+                newBridgeTarget = nil
+            }
             updatedSession = TaskSession(
                 id: session.id,
                 identity: session.identity,
-                title: session.title,
+                title: titleChanged ? derivedTitle : session.title,
                 status: newStatus,
                 priority: session.priority,
                 confidence: session.confidence,
-                summary: session.summary,
-                bridgeTarget: session.bridgeTarget,
+                summary: "\(event.status) — \(event.cwd)",
+                bridgeTarget: newBridgeTarget,
                 replyCapability: session.replyCapability,
                 lastActiveAt: Date(),
                 evidence: session.evidence,
@@ -399,7 +409,6 @@ public final class TaskStateStore {
         // Update sessions array
         var updatedSessions = sessions
         updatedSessions[idx] = updatedSession
-
 
         // Recalculate summary and priority
         updatedSessions = aggregationEngine.prioritize(updatedSessions)
@@ -738,6 +747,10 @@ public final class TaskStateStore {
                     && existing.identity.ttyIdentifier != nil
                 }) {
                     // Merge: preserve hook-derived ID and hookSessionID, merge data from refreshedSession
+                    // Prefer hook-derived title (from cwd) over observation-derived title
+                    let mergedTitle = hookSession.title.isEmpty || hookSession.title == "Claude Code"
+                        ? refreshedSession.title
+                        : hookSession.title
                     var mergedSession = TaskSession(
                         id: hookSession.id,  // Preserve hook-derived ID
                         identity: SessionIdentity(
@@ -752,7 +765,7 @@ public final class TaskStateStore {
                             startedAt: hookSession.identity.startedAt,
                             lastSeenAt: refreshedSession.identity.lastSeenAt
                         ),
-                        title: refreshedSession.title,
+                        title: mergedTitle,
                         status: refreshedSession.status,
                         priority: refreshedSession.priority,
                         confidence: refreshedSession.confidence,
@@ -826,10 +839,14 @@ public final class TaskStateStore {
             // reports running/waiting/alert, keep the hook-driven completed status.
             // Alert can override completed if the existing session is NOT completed
             // (i.e., observation detected a real alert condition).
+            // Also preserve hook-derived title (from cwd) over observation-derived title.
+            let mergedTitle = existingSession.title.isEmpty || existingSession.title == "Claude Code"
+                ? refreshedSession.title
+                : existingSession.title
             var mergedSession = TaskSession(
                 id: mergedIdentity.id,
                 identity: mergedIdentity,
-                title: refreshedSession.title,
+                title: mergedTitle,
                 status: refreshedSession.status,
                 priority: refreshedSession.priority,
                 confidence: refreshedSession.confidence,
