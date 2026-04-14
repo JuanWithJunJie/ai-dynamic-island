@@ -60,7 +60,29 @@ public final class HookInstaller {
         self.fileManager = fileManager
     }
 
-    /// Checks whether the MacIrland hook is currently installed.
+    /// Checks whether the MacIrland hook script is installed and hook entries are registered.
+    public func isFullyInstalled() -> Bool {
+        guard fileManager.fileExists(atPath: config.hookScriptPath.path) else {
+            return false
+        }
+
+        guard fileManager.fileExists(atPath: config.settingsJSONPath.path) else {
+            return false
+        }
+
+        guard
+            let data = try? Data(contentsOf: config.settingsJSONPath),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let hooks = json["hooks"] as? [String: Any]
+        else {
+            return false
+        }
+
+        let requiredEvents = Set(buildMacIrlandHookEntries().keys)
+        return requiredEvents.isSubset(of: Set(hooks.keys))
+    }
+
+    /// Checks whether the MacIrland hook script file exists.
     public func checkInstalled() -> Bool {
         fileManager.fileExists(atPath: config.hookScriptPath.path)
     }

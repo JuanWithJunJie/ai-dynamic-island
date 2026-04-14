@@ -41,6 +41,10 @@ final class RefreshCoordinator {
         timer = nil
     }
 
+    func syncSoundStateAfterHookEvent() {
+        playSoundCuesIfNeeded()
+    }
+
     private func playSoundCuesIfNeeded() {
         let currentSessions = store.sessions
         let cues = feedbackService.cues(previousSessions: previousSessions, currentSessions: currentSessions)

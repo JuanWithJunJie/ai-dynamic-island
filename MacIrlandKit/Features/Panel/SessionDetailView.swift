@@ -110,7 +110,7 @@ struct SessionDetailView: View {
     private var taskSummarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(session.title)
+                Text(session.projectDisplayName)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.white)
                 Spacer()

@@ -6,8 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = TaskStateStore(
         observationService: RealTerminalObservationService(),
         permissionService: AutomationPermissionService(),
-        localStore: UserDefaultsLocalStore(),
-        hookSoundPlayer: ChiptuneSoundPlayer()
+        localStore: UserDefaultsLocalStore()
     )
 
     private lazy var statusBarController = StatusBarController(store: store) {
@@ -41,11 +40,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if installer.isFullyInstalled() == false {
+            do {
+                try installer.install()
+                NSLog("HookSocketServer: repaired incomplete hook registration")
+            } catch {
+                NSLog("HookSocketServer: failed to repair hook registration - %@", error.localizedDescription)
+            }
+        }
+
         let server = HookSocketServer()
         do {
             try server.start(
                 eventHandler: { [weak self] event in
                     self?.store.processHookEvent(event)
+                    self?.refreshCoordinator.syncSoundStateAfterHookEvent()
                 },
                 connectionHandler: { connected in
                     NSLog("HookSocketServer: hook connected=%@", String(connected))

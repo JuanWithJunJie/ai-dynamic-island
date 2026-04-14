@@ -32,7 +32,6 @@ public final class TaskStateStore {
     private let localStore: any LocalStoring
     private let registry: AdapterRegistry
     private let automationPermissionService: AutomationPermissionService?
-    private let _hookSoundPlayer: SoundPlaying?
 
     public init(
         observationService: any ObservationProviding = MockObservationService(),
@@ -41,8 +40,7 @@ public final class TaskStateStore {
         replyBridge: any ReplyBridging = MockReplyBridgeService(),
         permissionService: any PermissionProviding = PlaceholderPermissionService(),
         localStore: any LocalStoring = InMemoryLocalStore(),
-        registry: AdapterRegistry = AdapterRegistry(adapters: [BuiltInCLIAdapter.codex, BuiltInCLIAdapter.claudeCode, BuiltInCLIAdapter.gemini]),
-        hookSoundPlayer: SoundPlaying? = nil
+        registry: AdapterRegistry = AdapterRegistry(adapters: [BuiltInCLIAdapter.codex, BuiltInCLIAdapter.claudeCode, BuiltInCLIAdapter.gemini])
     ) {
         self.observationService = observationService
         self.sessionResolver = sessionResolver
@@ -52,7 +50,6 @@ public final class TaskStateStore {
         self.localStore = localStore
         self.registry = registry
         self.automationPermissionService = permissionService as? AutomationPermissionService
-        self._hookSoundPlayer = hookSoundPlayer
         self.soundMode = localStore.loadSoundMode()
         self.draftRepliesBySessionID = [:]
         self.draftReply = ""
@@ -227,13 +224,11 @@ public final class TaskStateStore {
 
     // MARK: - Hook Event Processing
 
-    private var hookCompletedSoundPlayedForSessions: Set<TaskSession.ID> = []
-
     /// Processes a hook event from HookSocketServer and updates the matching session.
     ///
     /// Hook events are the authoritative source for Claude Code session status.
-    /// This method finds the session by hookSessionID or tty identifier, updates its status,
-    /// and triggers appropriate sound cues.
+    /// This method finds the session by hookSessionID or tty identifier and updates its state.
+    /// Sound emission is handled exclusively by RefreshCoordinator.
     public func processHookEvent(_ event: HookEvent) {
         // Find session by hookSessionID first (exact match on Claude Code session ID)
         // Then fall back to tty matching
@@ -273,7 +268,6 @@ public final class TaskStateStore {
         }
 
         let session = sessions[idx]
-        let previousStatus = session.status
 
         // Convert hook status to task status
         let newStatus: TaskStatus
@@ -373,11 +367,6 @@ public final class TaskStateStore {
             )
         }
 
-        // Handle SessionEnd: clean up completed session after a delay
-        if event.event == .sessionEnd {
-            // Mark as completed immediately, history entry added below
-        }
-
         // Append history entry for hook-driven status change
         let historyEntry = SessionHistoryEntry(
             kind: historyKindFor(status: newStatus),
@@ -415,36 +404,10 @@ public final class TaskStateStore {
         sessions = updatedSessions
         summary = aggregationEngine.summary(for: updatedSessions)
 
-        // Emit sound cue for status transition (hook-driven deduplication)
-        emitHookSoundCue(previousStatus: previousStatus, newStatus: newStatus, sessionID: session.id)
-    }
-
-    private func emitHookSoundCue(previousStatus: TaskStatus, newStatus: TaskStatus, sessionID: TaskSession.ID) {
-        let cue: SoundCue?
-        switch newStatus {
-        case .waitingInput, .replyAvailable:
-            cue = (previousStatus != .waitingInput && previousStatus != .replyAvailable) ? .waitingForReply : nil
-        case .completed:
-            if !hookCompletedSoundPlayedForSessions.contains(sessionID) {
-                cue = .completed
-                hookCompletedSoundPlayedForSessions.insert(sessionID)
-            } else {
-                cue = nil
-            }
-        case .alert, .failed:
-            cue = (previousStatus != .alert && previousStatus != .failed) ? .failed : nil
-        default:
-            cue = nil
-        }
-
-        // Debug logging for sound cue
-        let debugMsg = "emitHookSoundCue: cue=\(cue?.rawValue ?? "nil"), mode=\(soundMode.rawValue), player=\(_hookSoundPlayer != nil ? "set" : "nil"), previousStatus=\(previousStatus), newStatus=\(newStatus)"
-        if let data = (debugMsg + "\n").data(using: .utf8) {
-            try? data.write(to: URL(fileURLWithPath: "/tmp/macirland-sound-debug.log"))
-        }
-
-        guard let cue, let player = _hookSoundPlayer else { return }
-        player.playIfAllowed(cue, mode: soundMode)
+        // Note: sound emission is handled exclusively by RefreshCoordinator through
+        // FeedbackService.cues() which has proper transition-based deduplication.
+        // processHookEvent only updates state; do not emit sound here to avoid
+        // double-triggering when both hook and Timer fire within the same cycle.
     }
 
     /// Creates a new TaskSession directly from a HookEvent, without requiring AppleScript observation.
@@ -713,182 +676,228 @@ public final class TaskStateStore {
     }
 
     private func mergeHistory(from existingSessions: [TaskSession], into refreshedSessions: [TaskSession]) -> [TaskSession] {
-        // Defensive: build dictionary without crashing on duplicate IDs
-        // If duplicates exist, keep the session with newer lastActiveAt
-        var existingByID: [TaskSession.ID: TaskSession] = [:]
-        for session in existingSessions {
-            if let existing = existingByID[session.id] {
-                if session.lastActiveAt > existing.lastActiveAt {
-                    existingByID[session.id] = session
-                }
-            } else {
-                existingByID[session.id] = session
-            }
-        }
-
+        let existingByID = Dictionary(uniqueKeysWithValues: existingSessions.map { ($0.id, $0) })
         return refreshedSessions.map { refreshedSession in
-            // Primary matching: by TaskSession.ID
-            guard let existingSession = existingByID[refreshedSession.id] else {
-                // Fallback matching: when hook-created session (with hookSessionID) and
-                // AppleScript-created session (without hookSessionID) have the same tty,
-                // they are the same logical session and should merge.
-                // The hook-derived ID and hookSessionID must be preserved.
-                //
-                // Canonical identity chain: hookSessionID > (terminalAppIdentifier + tty) > text fallback
-                // This fallback implements step 2: when hookSessionID is not available in the
-                // AppleScript observation, use tty as the matching key.
-                if let hookSession = existingSessions.first(where: { existing in
-                    // Existing session must have hookSessionID set (hook-created)
-                    // Refreshed session must NOT have hookSessionID (AppleScript-created)
-                    // They must have the same tty (same logical session)
-                    existing.identity.hookSessionID != nil
-                    && refreshedSession.identity.hookSessionID == nil
-                    && existing.identity.ttyIdentifier == refreshedSession.identity.ttyIdentifier
-                    && existing.identity.ttyIdentifier != nil
-                }) {
-                    // Merge: preserve hook-derived ID and hookSessionID, merge data from refreshedSession
-                    // Prefer hook-derived title (from cwd) over observation-derived title
-                    let mergedTitle = hookSession.title.isEmpty || hookSession.title == "Claude Code"
-                        ? refreshedSession.title
-                        : hookSession.title
-                    var mergedSession = TaskSession(
-                        id: hookSession.id,  // Preserve hook-derived ID
-                        identity: SessionIdentity(
-                            id: hookSession.identity.id,
-                            cliKind: refreshedSession.identity.cliKind,
-                            terminalAppIdentifier: refreshedSession.identity.terminalAppIdentifier,
-                            windowIdentifier: refreshedSession.identity.windowIdentifier,
-                            commandLine: refreshedSession.identity.commandLine,
-                            ttyIdentifier: refreshedSession.identity.ttyIdentifier,
-                            hookSessionID: hookSession.identity.hookSessionID,  // Preserve hookSessionID
-                            sessionName: refreshedSession.identity.sessionName,
-                            startedAt: hookSession.identity.startedAt,
-                            lastSeenAt: refreshedSession.identity.lastSeenAt
-                        ),
-                        title: mergedTitle,
-                        status: refreshedSession.status,
-                        priority: refreshedSession.priority,
-                        confidence: refreshedSession.confidence,
-                        summary: refreshedSession.summary,
-                        bridgeTarget: refreshedSession.bridgeTarget,
-                        replyCapability: refreshedSession.replyCapability,
-                        lastActiveAt: refreshedSession.lastActiveAt,
-                        evidence: refreshedSession.evidence,
-                        recentEvents: refreshedSession.recentEvents,
-                        recentMessages: refreshedSession.recentMessages,
-                        historyEntries: hookSession.historyEntries,
-                        quickActions: refreshedSession.quickActions
-                    )
+            mergeOneSession(
+                refreshedSession: refreshedSession,
+                existingSessions: existingSessions,
+                existingByID: existingByID
+            )
+        }
+    }
 
-                    // Preserve hook-driven completed status
-                    if hookSession.status == .completed,
-                       (refreshedSession.status == .running || refreshedSession.status == .waitingInput || refreshedSession.status == .alert) {
-                        mergedSession = TaskSession(
-                            id: mergedSession.id,
-                            identity: mergedSession.identity,
-                            title: mergedSession.title,
-                            status: .completed,
-                            priority: mergedSession.priority,
-                            confidence: mergedSession.confidence,
-                            summary: mergedSession.summary,
-                            bridgeTarget: mergedSession.bridgeTarget,
-                            replyCapability: mergedSession.replyCapability,
-                            lastActiveAt: mergedSession.lastActiveAt,
-                            evidence: mergedSession.evidence,
-                            recentEvents: mergedSession.recentEvents,
-                            recentMessages: mergedSession.recentMessages,
-                            historyEntries: mergedSession.historyEntries,
-                            quickActions: mergedSession.quickActions
-                        )
-                    }
-
-                    var mergedHistory = mergedSession.historyEntries
-                    if hookSession.status != mergedSession.status,
-                       let latestEntry = refreshedSession.historyEntries.last {
-                        mergedHistory.append(latestEntry)
-                    }
-
-                    return mergedSession.withHistoryEntries(mergedHistory)
-                }
-
-                // No match found - return refreshed session as-is (new session)
-                return refreshedSession
-            }
-
-            // Preserve hook-driven identity: if existing session has hookSessionID but
-            // refreshed session doesn't (AppleScript didn't see it), preserve hookSessionID.
-            // This ensures hook-created sessions retain their identity through merges.
-            var mergedIdentity = refreshedSession.identity
-            if existingSession.identity.hookSessionID != nil
-               && refreshedSession.identity.hookSessionID == nil {
-                mergedIdentity = SessionIdentity(
-                    id: refreshedSession.identity.id,
+    private func mergeOneSession(
+        refreshedSession: TaskSession,
+        existingSessions: [TaskSession],
+        existingByID: [TaskSession.ID: TaskSession]
+    ) -> TaskSession {
+        guard let existingSession = existingByID[refreshedSession.id] else {
+            if let hookSession = existingSessions.first(where: { existing in
+                existing.identity.hookSessionID != nil
+                && refreshedSession.identity.hookSessionID == nil
+                && existing.identity.ttyIdentifier == refreshedSession.identity.ttyIdentifier
+                && existing.identity.ttyIdentifier != nil
+            }) {
+                let mergedIdentity = SessionIdentity(
+                    id: hookSession.identity.id,
                     cliKind: refreshedSession.identity.cliKind,
                     terminalAppIdentifier: refreshedSession.identity.terminalAppIdentifier,
                     windowIdentifier: refreshedSession.identity.windowIdentifier,
                     commandLine: refreshedSession.identity.commandLine,
                     ttyIdentifier: refreshedSession.identity.ttyIdentifier,
-                    hookSessionID: existingSession.identity.hookSessionID,
-                    sessionName: refreshedSession.identity.sessionName,
-                    startedAt: existingSession.identity.startedAt,
+                    hookSessionID: hookSession.identity.hookSessionID,
+                    sessionName: hookSession.identity.sessionName.isEmpty
+                        ? refreshedSession.identity.sessionName
+                        : hookSession.identity.sessionName,
+                    startedAt: hookSession.identity.startedAt,
                     lastSeenAt: refreshedSession.identity.lastSeenAt
                 )
-            }
 
-            // Preserve hook-driven status: if existing session is completed but observation
-            // reports running/waiting/alert, keep the hook-driven completed status.
-            // Alert can override completed if the existing session is NOT completed
-            // (i.e., observation detected a real alert condition).
-            // Also preserve hook-derived title (from cwd) over observation-derived title.
-            let mergedTitle = existingSession.title.isEmpty || existingSession.title == "Claude Code"
-                ? refreshedSession.title
-                : existingSession.title
-            var mergedSession = TaskSession(
-                id: mergedIdentity.id,
-                identity: mergedIdentity,
-                title: mergedTitle,
-                status: refreshedSession.status,
-                priority: refreshedSession.priority,
-                confidence: refreshedSession.confidence,
-                summary: refreshedSession.summary,
-                bridgeTarget: refreshedSession.bridgeTarget,
-                replyCapability: refreshedSession.replyCapability,
-                lastActiveAt: refreshedSession.lastActiveAt,
-                evidence: refreshedSession.evidence,
-                recentEvents: refreshedSession.recentEvents,
-                recentMessages: refreshedSession.recentMessages,
-                historyEntries: refreshedSession.historyEntries,
-                quickActions: refreshedSession.quickActions
-            )
-            if existingSession.status == .completed,
-               (refreshedSession.status == .running || refreshedSession.status == .waitingInput || refreshedSession.status == .alert) {
-                mergedSession = TaskSession(
-                    id: mergedSession.id,
-                    identity: mergedSession.identity,
-                    title: mergedSession.title,
-                    status: .completed,
-                    priority: mergedSession.priority,
-                    confidence: mergedSession.confidence,
-                    summary: mergedSession.summary,
-                    bridgeTarget: mergedSession.bridgeTarget,
-                    replyCapability: mergedSession.replyCapability,
-                    lastActiveAt: existingSession.lastActiveAt,
-                    evidence: mergedSession.evidence,
-                    recentEvents: mergedSession.recentEvents,
-                    recentMessages: mergedSession.recentMessages,
-                    historyEntries: mergedSession.historyEntries,
-                    quickActions: mergedSession.quickActions
+                let sameHookLifecycle = hookSession.identity.hookSessionID != nil
+                    && (
+                        hookSession.identity.hookSessionID == refreshedSession.identity.hookSessionID
+                        || (
+                            refreshedSession.identity.hookSessionID == nil
+                            && hookSession.identity.ttyIdentifier != nil
+                            && hookSession.identity.ttyIdentifier == refreshedSession.identity.ttyIdentifier
+                        )
+                    )
+
+                let mergedTitle = hookSession.title.isEmpty || hookSession.title == "Claude Code"
+                    ? refreshedSession.title
+                    : hookSession.title
+                let mergedStatus = mergedStatusPreservingHookAuthority(
+                    existingStatus: hookSession.status,
+                    refreshedStatus: refreshedSession.status,
+                    sameHookLifecycle: sameHookLifecycle
                 )
+                let mergedBridgeTarget = mergedBridgeTarget(
+                    existingSession: hookSession,
+                    refreshedSession: refreshedSession,
+                    mergedTitle: mergedTitle
+                )
+
+                let mergedSession = TaskSession(
+                    id: hookSession.id,
+                    identity: mergedIdentity,
+                    title: mergedTitle,
+                    status: mergedStatus,
+                    priority: refreshedSession.priority,
+                    confidence: max(hookSession.confidence, refreshedSession.confidence),
+                    summary: mergedStatus == hookSession.status ? hookSession.summary : refreshedSession.summary,
+                    bridgeTarget: mergedBridgeTarget,
+                    replyCapability: refreshedSession.replyCapability,
+                    lastActiveAt: max(hookSession.lastActiveAt, refreshedSession.lastActiveAt),
+                    evidence: refreshedSession.evidence,
+                    recentEvents: refreshedSession.recentEvents,
+                    recentMessages: refreshedSession.recentMessages,
+                    historyEntries: hookSession.historyEntries,
+                    quickActions: refreshedSession.quickActions
+                )
+
+                var mergedHistory = mergedSession.historyEntries
+                if hookSession.status != mergedSession.status,
+                   let latestEntry = refreshedSession.historyEntries.last {
+                    mergedHistory.append(latestEntry)
+                }
+
+                return mergedSession.withHistoryEntries(mergedHistory)
             }
 
-            var mergedHistory = existingSession.historyEntries
-            if existingSession.status != mergedSession.status,
-               let latestEntry = mergedSession.historyEntries.last {
-                mergedHistory.append(latestEntry)
-            }
-
-            return mergedSession.withHistoryEntries(mergedHistory)
+            return refreshedSession
         }
+
+        var mergedIdentity = refreshedSession.identity
+        if existingSession.identity.hookSessionID != nil
+           && refreshedSession.identity.hookSessionID == nil {
+            mergedIdentity = SessionIdentity(
+                id: refreshedSession.identity.id,
+                cliKind: refreshedSession.identity.cliKind,
+                terminalAppIdentifier: refreshedSession.identity.terminalAppIdentifier,
+                windowIdentifier: refreshedSession.identity.windowIdentifier,
+                commandLine: refreshedSession.identity.commandLine,
+                ttyIdentifier: refreshedSession.identity.ttyIdentifier,
+                hookSessionID: existingSession.identity.hookSessionID,
+                sessionName: existingSession.identity.sessionName.isEmpty
+                        ? refreshedSession.identity.sessionName
+                        : existingSession.identity.sessionName,
+                startedAt: existingSession.identity.startedAt,
+                lastSeenAt: refreshedSession.identity.lastSeenAt
+            )
+        }
+
+        let sameHookLifecycle = existingSession.identity.hookSessionID != nil
+            && (
+                existingSession.identity.hookSessionID == mergedIdentity.hookSessionID
+                || (
+                    mergedIdentity.hookSessionID == nil
+                    && existingSession.identity.ttyIdentifier != nil
+                    && existingSession.identity.ttyIdentifier == mergedIdentity.ttyIdentifier
+                )
+            )
+
+        let mergedTitle = existingSession.title.isEmpty || existingSession.title == "Claude Code"
+            ? refreshedSession.title
+            : existingSession.title
+        let mergedStatus = mergedStatusPreservingHookAuthority(
+            existingStatus: existingSession.status,
+            refreshedStatus: refreshedSession.status,
+            sameHookLifecycle: sameHookLifecycle
+        )
+        let mergedBridgeTarget = mergedBridgeTarget(
+            existingSession: existingSession,
+            refreshedSession: refreshedSession,
+            mergedTitle: mergedTitle
+        )
+
+        let mergedSession = TaskSession(
+            id: existingSession.id,
+            identity: SessionIdentity(
+                id: existingSession.identity.id,
+                cliKind: mergedIdentity.cliKind,
+                terminalAppIdentifier: mergedIdentity.terminalAppIdentifier,
+                windowIdentifier: mergedIdentity.windowIdentifier,
+                commandLine: mergedIdentity.commandLine,
+                ttyIdentifier: mergedIdentity.ttyIdentifier,
+                hookSessionID: mergedIdentity.hookSessionID,
+                sessionName: mergedIdentity.sessionName,
+                startedAt: existingSession.identity.startedAt,
+                lastSeenAt: mergedIdentity.lastSeenAt
+            ),
+            title: mergedTitle,
+            status: mergedStatus,
+            priority: refreshedSession.priority,
+            confidence: max(existingSession.confidence, refreshedSession.confidence),
+            summary: mergedStatus == existingSession.status ? existingSession.summary : refreshedSession.summary,
+            bridgeTarget: mergedBridgeTarget,
+            replyCapability: refreshedSession.replyCapability,
+            lastActiveAt: max(existingSession.lastActiveAt, refreshedSession.lastActiveAt),
+            evidence: refreshedSession.evidence,
+            recentEvents: refreshedSession.recentEvents,
+            recentMessages: refreshedSession.recentMessages,
+            historyEntries: refreshedSession.historyEntries,
+            quickActions: refreshedSession.quickActions
+        )
+
+        var mergedHistory = existingSession.historyEntries
+        if existingSession.status != mergedSession.status,
+           let latestEntry = mergedSession.historyEntries.last {
+            mergedHistory.append(latestEntry)
+        }
+
+        return mergedSession.withHistoryEntries(mergedHistory)
+    }
+
+    private func mergedStatusPreservingHookAuthority(
+        existingStatus: TaskStatus,
+        refreshedStatus: TaskStatus,
+        sameHookLifecycle: Bool
+    ) -> TaskStatus {
+        guard sameHookLifecycle else {
+            return refreshedStatus
+        }
+
+        switch existingStatus {
+        case .completed:
+            if refreshedStatus == .running
+                || refreshedStatus == .waitingInput
+                || refreshedStatus == .replyAvailable
+                || refreshedStatus == .alert {
+                return .completed
+            }
+        case .running:
+            if refreshedStatus == .completed {
+                return .running
+            }
+        case .waitingInput, .replyAvailable:
+            if refreshedStatus == .completed {
+                return existingStatus
+            }
+        default:
+            break
+        }
+
+        return refreshedStatus
+    }
+
+    private func mergedBridgeTarget(
+        existingSession: TaskSession,
+        refreshedSession: TaskSession,
+        mergedTitle: String
+    ) -> BridgeTarget? {
+        if let refreshedBridgeTarget = refreshedSession.bridgeTarget {
+            return BridgeTarget(
+                cliKind: refreshedBridgeTarget.cliKind,
+                sessionID: existingSession.id,
+                terminalContext: refreshedBridgeTarget.terminalContext,
+                channelType: refreshedBridgeTarget.channelType,
+                displayName: existingSession.title.isEmpty || existingSession.title == "Claude Code"
+                    ? refreshedBridgeTarget.displayName
+                    : "Claude Code · \(mergedTitle)"
+            )
+        }
+
+        return existingSession.bridgeTarget
     }
 
     private func capabilityStatus(for events: [RawCLIEvent], resolvedSessions: [TaskSession]) -> CapabilityStatus {

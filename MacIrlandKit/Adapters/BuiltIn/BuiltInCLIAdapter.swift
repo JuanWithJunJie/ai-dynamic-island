@@ -166,39 +166,122 @@ public struct BuiltInCLIAdapter: CLIAdapter {
     }
 
     private static func title(for event: RawCLIEvent) -> String {
+        if let preferredTitle = preferredTitle(from: event.snapshot) {
+            return preferredTitle
+        }
+
         let prefix = event.snippet.split(separator: "\n").first.map(String.init) ?? event.snippet
         return prefix.isEmpty ? "未命名任务" : String(prefix.prefix(48))
     }
 
+    private static func preferredTitle(from snapshot: TerminalObservationSnapshot) -> String? {
+        let candidates = [
+            snapshot.fullWindowName,
+            snapshot.windowTitle,
+            snapshot.sessionName
+        ]
+
+        for candidate in candidates {
+            if let extracted = extractedProjectName(from: candidate) {
+                return extracted
+            }
+        }
+
+        let commandLine = snapshot.commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !commandLine.isEmpty, commandLine != "claude" {
+            let components = commandLine.split(separator: "/")
+            if let last = components.last {
+                let fallback = String(last).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !fallback.isEmpty, fallback != "claude" {
+                    return fallback
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func extractedProjectName(from rawTitle: String) -> String? {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return nil
+        }
+
+        if let range = title.range(of: ": ") {
+            let suffix = String(title[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let normalizedSuffix = normalizedProjectNameCandidate(suffix) {
+                return normalizedSuffix
+            }
+        }
+
+        let separators = [" — ", " – ", " · "]
+        for separator in separators {
+            let parts = title.components(separatedBy: separator).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if parts.count >= 2 {
+                if let first = parts.first, let normalizedFirst = normalizedProjectNameCandidate(first) {
+                    let trailing = parts.dropFirst().joined(separator: separator)
+                    if trailing.localizedCaseInsensitiveContains("claude") || first != title {
+                        return normalizedFirst
+                    }
+                }
+            }
+        }
+
+        return normalizedProjectNameCandidate(title)
+    }
+
+    private static func normalizedProjectNameCandidate(_ candidate: String) -> String? {
+        let trimmed = candidate
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "·•✳⠂◦●"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let lowercased = trimmed.lowercased()
+        let genericNames = [
+            "claude",
+            "claude code",
+            "running claude code terminal session",
+            "completed claude code terminal session"
+        ]
+        if genericNames.contains(lowercased) || lowercased.contains("claude code (") {
+            return nil
+        }
+
+        return trimmed
+    }
+
     private func judgement(for snippet: String, transcriptWasEmpty: Bool = false, windowTitle: String = "") -> ClaudeStatusJudgement {
         if cliKind == .claudeCode {
-            // When transcript is empty due to Terminal/iTerm2 privacy protection,
-            // we see nothing meaningful in snippet either. In that case, treat as
-            // completed since we can't observe any running state.
-            // But if snippet contains actual text (like "Anything else?"),
-            // that text IS the signal and must be passed to the judge.
             if transcriptWasEmpty {
                 let trimmed = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // Empty transcript under Terminal/iTerm privacy protection is not a
+                // trustworthy completion signal. Be conservative and keep the
+                // session running unless we can extract a stronger post-run state.
                 if trimmed.isEmpty || trimmed == "❯" || trimmed == "❯ " {
                     return ClaudeStatusJudgement(
-                        status: .completed,
-                        confidence: 0.8,
-                        matchedSignals: 1,
+                        status: .running,
+                        confidence: 0.55,
+                        matchedSignals: 0,
                         dominantReason: "empty transcript with privacy protection"
                     )
                 }
-                // Snippet has content but transcript is empty. This can happen when
-                // the snippet is a pre-formatted status string (e.g. from a prior
-                // observation cycle that set summary = "Completed Claude Code...").
-                // Use statusFromSnippetFormat for known completion patterns to avoid
-                // re-scoring through judge() (which might not recognize the format).
-                // For other patterns, fall through to judge().
-                if let status = Self.statusFromSnippetFormat(trimmed), status == .completed {
+
+                // Only trust explicit non-running preformatted states here. This
+                // avoids reusing stale observation summaries to promote a still-live
+                // session into completed.
+                if let status = Self.statusFromSnippetFormat(trimmed), status != .completed {
                     return ClaudeStatusJudgement(
                         status: status,
-                        confidence: 0.88,
+                        confidence: 0.86,
                         matchedSignals: 1,
-                        dominantReason: "pre-formatted completion snippet"
+                        dominantReason: "pre-formatted non-completed snippet"
                     )
                 }
             }

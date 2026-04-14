@@ -57,7 +57,7 @@ private struct SessionPickerRow: View {
             StatusSpriteView(status: session.status)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.title)
+                Text(session.projectDisplayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)

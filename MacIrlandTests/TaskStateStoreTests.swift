@@ -297,7 +297,8 @@ final class TaskStateStoreTests: XCTestCase {
     func testCompletedSessionsAreFilteredFromPrimaryPanelAfterTeardown() {
         let completedEvent = RawCLIEvent(
             cliKind: .claudeCode,
-            snippet: "Completed Claude Code terminal session: project-x",
+            snippet: "All set. Created file: project-x.txt",
+            transcript: "All set. Created file: project-x.txt",
             snapshot: TerminalObservationSnapshot(
                 terminalAppIdentifier: "com.apple.Terminal",
                 windowTitle: "Claude Code · project-x",
@@ -436,6 +437,116 @@ final class TaskStateStoreTests: XCTestCase {
 
         XCTAssertEqual(store.sessions.first?.status, .completed)
         XCTAssertEqual(store.summary.completedCount, 1)
+    }
+
+    func testClaudeAdapterDoesNotTreatEmptyTranscriptPromptAsCompleted() {
+        let event = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "❯",
+            transcript: "",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · long-run",
+                commandLine: "claude",
+                ttyIdentifier: "ttys014"
+            )
+        )
+
+        let session = BuiltInCLIAdapter.claudeCode.buildSession(from: event)
+
+        XCTAssertEqual(session?.status, .running)
+    }
+
+    func testClaudeAdapterIgnoresPreformattedCompletedSnippetWhenTranscriptIsEmpty() {
+        let event = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Completed Claude Code terminal session: macirland",
+            transcript: "",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · long-run",
+                commandLine: "claude",
+                ttyIdentifier: "ttys015"
+            )
+        )
+
+        let session = BuiltInCLIAdapter.claudeCode.buildSession(from: event)
+
+        XCTAssertEqual(session?.status, .running)
+    }
+
+    func testHookCompletedStatusSurvivesObservationRefreshOnSameTTY() {
+        let runningObservation = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Running Claude Code terminal session: macirland",
+            transcript: "working through changes",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · macirland",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys031"
+            )
+        )
+        let source = MutableObservationService(initialEvents: [runningObservation])
+        let store = TaskStateStore(observationService: source)
+
+        XCTAssertEqual(store.sessions.first?.status, .running)
+
+        store.processHookEvent(
+            HookEvent(
+                sessionID: "hook-session-1",
+                cwd: "/Users/lijunjie/Documents/AIproject/macirland",
+                event: .stop,
+                status: "completed",
+                pid: 123,
+                tty: "/dev/ttys031"
+            )
+        )
+
+        XCTAssertEqual(store.sessions.first?.status, .completed)
+
+        source.updateEvents([runningObservation])
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.count, 1)
+        XCTAssertEqual(store.sessions.first?.status, .completed)
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "hook-session-1")
+    }
+
+    func testHookRunningStatusIsNotPromotedToCompletedByWeakObservationOnSameTTY() {
+        let source = MutableObservationService(initialEvents: [])
+        let store = TaskStateStore(observationService: source)
+
+        store.processHookEvent(
+            HookEvent(
+                sessionID: "hook-session-2",
+                cwd: "/Users/lijunjie/Documents/AIproject/macirland",
+                event: .postToolUse,
+                status: "running",
+                pid: 456,
+                tty: "/dev/ttys032"
+            )
+        )
+
+        XCTAssertEqual(store.sessions.first?.status, .running)
+
+        let weakCompletedObservation = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Completed Claude Code terminal session: macirland",
+            transcript: "",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · macirland",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys032"
+            )
+        )
+        source.updateEvents([weakCompletedObservation])
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.count, 1)
+        XCTAssertEqual(store.sessions.first?.status, .running)
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "hook-session-2")
     }
 
     func testRealObservationDetectsFailedStatus() {
@@ -1475,12 +1586,108 @@ final class TaskStateStoreTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
-    func testRefreshDeduplicatesSessionsWithSameStableIdentity() {
+    func testRefreshPreservesHookCompletedOnlyWithinSameHookLifecycle() {
+        let source = MutableObservationService(initialEvents: [runningClaudeEvent])
+        let store = TaskStateStore(observationService: source)
+        let hookSessionID = "hook-same-lifecycle"
+
+        store.processHookEvent(
+            HookEvent(
+                sessionID: hookSessionID,
+                cwd: "/Users/test/macirland",
+                event: .stop,
+                status: "completed",
+                pid: 100,
+                tty: "ttys030"
+            )
+        )
+
+        XCTAssertEqual(store.sessions.first?.status, .completed)
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, hookSessionID)
+
+        source.updateEvents([runningClaudeEventWithNewSnippet])
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.first?.status, .completed)
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, hookSessionID)
+    }
+
+    func testRefreshPreservesHookDerivedProjectTitleAcrossObservationRefresh() {
         let source = MutableObservationService(initialEvents: [runningClaudeEvent])
         let store = TaskStateStore(observationService: source)
 
-        XCTAssertEqual(Set(store.sessions.map(\.id)).count, store.sessions.count)
+        store.processHookEvent(
+            HookEvent(
+                sessionID: "hook-project-title",
+                cwd: "/Users/test/macirland",
+                event: .stop,
+                status: "completed",
+                pid: 100,
+                tty: "ttys030"
+            )
+        )
+
+        XCTAssertEqual(store.sessions.first?.title, "macirland")
+
+        source.updateEvents([
+            RawCLIEvent(
+                cliKind: .claudeCode,
+                snippet: "Still processing edits...",
+                snapshot: TerminalObservationSnapshot(
+                    terminalAppIdentifier: "com.apple.Terminal",
+                    windowTitle: "Running Claude Code terminal session",
+                    commandLine: "claude",
+                    ttyIdentifier: "ttys030"
+                )
+            )
+        ])
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.first?.title, "macirland")
+        XCTAssertEqual(store.sessions.first?.status, .completed)
     }
+
+    func testRefreshAllowsCompletedHookSessionToReviveForNewHookLifecycleOnSameTTY() {
+        let source = MutableObservationService(initialEvents: [runningClaudeEvent])
+        let store = TaskStateStore(observationService: source)
+
+        store.processHookEvent(
+            HookEvent(
+                sessionID: "hook-old",
+                cwd: "/Users/test/macirland",
+                event: .stop,
+                status: "completed",
+                pid: 100,
+                tty: "ttys030"
+            )
+        )
+        XCTAssertEqual(store.sessions.first?.status, .completed)
+
+        store.processHookEvent(
+            HookEvent(
+                sessionID: "hook-new",
+                cwd: "/Users/test/macirland",
+                event: .userPromptSubmit,
+                status: "running",
+                pid: 101,
+                tty: "ttys030"
+            )
+        )
+
+        XCTAssertEqual(store.sessions.first?.status, .running)
+        XCTAssertEqual(store.sessions.first?.identity.hookSessionID, "hook-new")
+    }
+
+    func testRefreshAllowsObservationCompletedToReplaceOldRunningStateWithoutHookLifecycle() {
+        let source = MutableObservationService(initialEvents: [runningClaudeEvent])
+        let store = TaskStateStore(observationService: source)
+
+        source.updateEvents([completedClaudeEvent])
+        store.refresh()
+
+        XCTAssertEqual(store.sessions.first?.status, .completed)
+    }
+
 
     func testResolverDedupPreservesDistinctSessionsWithDifferentTtyIdentifiers() {
         // Two sessions with different ttyIdentifiers MUST NOT be deduplicated.
@@ -1778,6 +1985,20 @@ final class TaskStateStoreTests: XCTestCase {
                 windowTitle: "Claude Code · reply",
                 commandLine: "claude",
                 ttyIdentifier: "ttys031"
+            )
+        )
+    }
+
+    private var completedClaudeEvent: RawCLIEvent {
+        RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "All set. Created file: history.txt",
+            transcript: "All set. Created file: history.txt",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.apple.Terminal",
+                windowTitle: "Claude Code · history",
+                commandLine: "claude",
+                ttyIdentifier: "ttys030"
             )
         )
     }

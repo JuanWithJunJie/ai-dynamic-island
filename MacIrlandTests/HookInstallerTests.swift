@@ -269,10 +269,23 @@ final class HookInstallerTests: XCTestCase {
         XCTAssertFalse(installer.checkInstalled())
     }
 
-    func testCheckInstalledReturnsTrueAfterInstall() throws {
+    func testIsFullyInstalledReturnsFalseWhenOnlyScriptExists() throws {
         let installer = makeInstaller()
-        try installer.install()
+
+        try mockFileManager.createDirectory(at: hooksDirectory, withIntermediateDirectories: true)
+        try "#!/usr/bin/env python3".write(to: hookScriptPath, atomically: true, encoding: .utf8)
+
         XCTAssertTrue(installer.checkInstalled())
+        XCTAssertFalse(installer.isFullyInstalled())
+    }
+
+    func testIsFullyInstalledReturnsTrueAfterInstall() throws {
+        let installer = makeInstaller()
+
+        try installer.install()
+
+        XCTAssertTrue(installer.checkInstalled())
+        XCTAssertTrue(installer.isFullyInstalled())
     }
 
     func testUninstallRemovesHookScript() throws {

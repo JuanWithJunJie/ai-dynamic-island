@@ -16,7 +16,7 @@ public struct IslandCompactView: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .firstTextBaseline) {
-                                Text(session.title)
+                                Text(session.projectDisplayName)
                                     .font(.system(size: 22, weight: .semibold, design: .rounded))
                                     .foregroundStyle(.white)
                                     .lineLimit(2)

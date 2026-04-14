@@ -113,7 +113,7 @@ private struct HoverExpandStatusStrip: View {
 
     private var statusTitle: String {
         if let session = store.hoverExpandPrimarySession {
-            return session.title
+            return session.projectDisplayName
         }
         return "MacIrland"
     }
@@ -249,24 +249,6 @@ private struct HoverExpandSessionDetail: View {
     }
 
     private var detailTitle: String {
-        // For iTerm2, sessionName is the actual session name (e.g., "PlanApp")
-        // For Terminal, sessionName may be empty, fall back to path extraction
-        // Extract project name (same logic as rowTitle)
-        let projectName: String
-        if let range = session.title.range(of: ": ") {
-            projectName = String(session.title[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-        } else if !session.title.isEmpty && session.title != "Claude Code" && !session.title.hasPrefix("Running Claude Code") && !session.title.hasPrefix("Completed Claude Code") {
-            projectName = session.title
-        } else if !session.identity.sessionName.isEmpty && session.identity.sessionName != "⠂ Claude Code" && session.identity.sessionName != "✳ Claude Code" && !session.identity.sessionName.contains("Claude Code") {
-            projectName = session.identity.sessionName
-        } else {
-            let components = session.identity.commandLine.split(separator: "/")
-            if let last = components.last {
-                projectName = String(last).trimmingCharacters(in: .whitespaces)
-            } else {
-                projectName = session.title
-            }
-        }
         // Add status indicator prefix
         let indicator: String
         switch session.status {
@@ -281,7 +263,7 @@ private struct HoverExpandSessionDetail: View {
         default:
             indicator = ""
         }
-        return indicator + projectName
+        return indicator + session.projectDisplayName
     }
 
     private var terminalTypeLabel: (text: String, color: Color, bg: Color)? {
@@ -444,9 +426,7 @@ private struct HoverExpandSessionRow: View {
 
             switch session.status {
             case .running:
-                Circle()
-                    .fill(color)
-                    .frame(width: 5, height: 5)
+                SmallRunningIcon(color: color)
             case .waitingInput, .replyAvailable, .completed:
                 Text("✓")
                     .font(.system(size: 11, weight: .semibold))
@@ -490,28 +470,7 @@ private struct HoverExpandSessionRow: View {
     }
 
     private var rowTitle: String {
-        // For iTerm2, sessionName is the actual session name (e.g., "PlanApp")
-        // Prefer hook-derived title (project name from cwd) over sessionName
-        // Hook-derived title looks like "PlanApp" or extracted from "Running Claude Code terminal session: macirland"
-        if let range = session.title.range(of: ": ") {
-            let extracted = String(session.title[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-            if !extracted.isEmpty && extracted != "Claude Code" {
-                return extracted
-            }
-        }
-        // If hook-derived title is valid (not "Claude Code" and not empty), use it
-        if !session.title.isEmpty && session.title != "Claude Code" && !session.title.hasPrefix("Running Claude Code") && !session.title.hasPrefix("Completed Claude Code") {
-            return session.title
-        }
-        // Fall back to sessionName only if title didn't yield a valid project name
-        if !session.identity.sessionName.isEmpty && session.identity.sessionName != "⠂ Claude Code" && session.identity.sessionName != "✳ Claude Code" && !session.identity.sessionName.contains("Claude Code") {
-            return session.identity.sessionName
-        }
-        let components = session.identity.commandLine.split(separator: "/")
-        if let last = components.last {
-            return String(last).trimmingCharacters(in: .whitespaces)
-        }
-        return session.title
+        session.projectDisplayName
     }
 
     private var rowSubtitle: String {
@@ -526,5 +485,38 @@ private struct HoverExpandSessionRow: View {
             return MacIrlandPalette.mockupOrange.opacity(0.06)
         }
         return Color.clear
+    }
+}
+
+// MARK: - Small Running Icon
+
+/// Compact running indicator for hover expand rows.
+/// Shows a terminal icon with 4 progressively lit dots (0.18s cycle).
+private struct SmallRunningIcon: View {
+    let color: Color
+    @State private var dotCount = 1
+
+    var body: some View {
+        HStack(spacing: 1) {
+            Image(systemName: "terminal.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(color)
+
+            HStack(spacing: 1) {
+                ForEach(0..<4, id: \.self) { i in
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 2, height: 2)
+                        .opacity(i < dotCount ? 1.0 : 0.2)
+                }
+            }
+        }
+        .onAppear {
+            Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { timer in
+                Task { @MainActor in
+                    dotCount = (dotCount % 4) + 1
+                }
+            }
+        }
     }
 }

@@ -32,6 +32,9 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
     }
 
     public func play(_ cue: SoundCue) {
+        // Ensure engine is running before playing any sound
+        ensureEngineRunning()
+
         switch cue {
         case .taskStarted:
             playSquareWave(frequency: 440, duration: 0.08)
@@ -41,6 +44,16 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
             playCompletionChiptune()
         case .failed:
             playFailBuzzer()
+        }
+    }
+
+    private func ensureEngineRunning() {
+        do {
+            if !audioEngine.isRunning {
+                try audioEngine.start()
+            }
+        } catch {
+            // Log but don't crash - sound is non-critical
         }
     }
 
@@ -58,26 +71,21 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
     }
 
     private func playCompletionChiptune() {
-        // Pleasant bell-like chime using sine wave with harmonics
-        // Base frequencies: C5, E5, G5, C6 with overtone harmonics
-        let notes: [(frequency: Double, amplitude: Float, delay: Double)] = [
-            // C5 with harmonic
-            (523.25, 0.4, 0.0),
-            (1046.50, 0.15, 0.0),  // C6 overtone
-            // E5 with harmonic
-            (659.25, 0.35, 0.12),
-            (1318.51, 0.12, 0.12), // E6 overtone
-            // G5 with harmonic
-            (783.99, 0.3, 0.24),
-            (1567.98, 0.1, 0.24),  // G6 overtone
-            // C6 final
-            (1046.50, 0.4, 0.36),
-            (2093.00, 0.15, 0.36), // C7 overtone
+        // Pleasant ascending chime: C5 -> E5 -> G5 -> C6, played sequentially
+        // Each note plays to completion before the next starts (no stopAllActiveNodes in between)
+        let notes: [(frequency: Double, amplitude: Float)] = [
+            (523.25, 0.4),   // C5
+            (659.25, 0.35),  // E5
+            (783.99, 0.3),   // G5
+            (1046.50, 0.4),  // C6
         ]
-        let noteDuration: Double = 0.15
+        let noteDelay: Double = 0.15
 
-        for note in notes {
-            playSineWaveAsync(frequency: note.frequency, amplitude: note.amplitude, duration: noteDuration, delay: note.delay)
+        for (index, note) in notes.enumerated() {
+            let delay = Double(index) * noteDelay
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.playSineWave(frequency: note.frequency, amplitude: note.amplitude, duration: 0.15)
+            }
         }
     }
 

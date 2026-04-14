@@ -413,7 +413,95 @@ final class UIDisplayFormattingTests: XCTestCase {
         XCTAssertEqual(session.compactSessionSubtitle, "Refreshing the panel UI.")
     }
 
-    @MainActor
+    func testProjectDisplayNamePrefersTitleOverSummaryForPrimaryLabels() {
+        let session = makeSession(status: .running, title: "macirland")
+
+        XCTAssertEqual(session.projectDisplayName, "macirland")
+        XCTAssertNotEqual(session.projectDisplayName, session.summary)
+    }
+
+    func testProjectDisplayNameExtractsProjectFromPrefixedHookTitle() {
+        let session = makeSession(status: .running, title: "Running Claude Code terminal session: macirland")
+
+        XCTAssertEqual(session.projectDisplayName, "macirland")
+    }
+
+    func testProjectDisplayNameFallsBackToWindowIdentifierWhenSessionNameIsTruncated() {
+        let session = TaskSession(
+            identity: SessionIdentity(
+                cliKind: .claudeCode,
+                terminalAppIdentifier: "com.googlecode.iterm2",
+                windowIdentifier: "test — ✳ Claude Code",
+                commandLine: "",
+                ttyIdentifier: "ttys009",
+                sessionName: "✳ C",
+                startedAt: Date(timeIntervalSince1970: 0),
+                lastSeenAt: Date(timeIntervalSince1970: 0)
+            ),
+            title: "Claude Code",
+            status: .running,
+            priority: 1,
+            confidence: 0.92,
+            summary: "Refreshing the panel UI.",
+            bridgeTarget: nil,
+            replyCapability: ReplyCapability(
+                status: .available,
+                reason: "Ready",
+                targetDescription: "Claude Code",
+                channelStatus: "mock"
+            ),
+            lastActiveAt: Date(timeIntervalSince1970: 0),
+            evidence: [],
+            recentEvents: [],
+            recentMessages: [],
+            historyEntries: [],
+            quickActions: [.continueExecution]
+        )
+
+        XCTAssertEqual(session.projectDisplayName, "test")
+    }
+
+    func testProjectDisplayNameIgnoresSingleCharacterSessionNameArtifacts() {
+        let session = makeSession(
+            status: .running,
+            title: "Claude Code",
+            sessionName: "C"
+        )
+
+        XCTAssertEqual(session.projectDisplayName, "ui")
+    }
+
+    func testBuiltInAdapterPrefersWindowTitleProjectOverSnippetPrefix() {
+        let event = RawCLIEvent(
+            cliKind: .claudeCode,
+            snippet: "Running Claude Code terminal session: · Claude C",
+            transcript: "",
+            snapshot: TerminalObservationSnapshot(
+                terminalAppIdentifier: "com.googlecode.iterm2",
+                windowTitle: "test — ✳ Claude Code",
+                fullWindowName: "",
+                commandLine: "claude",
+                ttyIdentifier: "/dev/ttys002",
+                isBusy: true,
+                sessionName: "✳ C"
+            )
+        )
+
+        let session = BuiltInCLIAdapter.claudeCode.buildSession(from: event)
+
+        XCTAssertEqual(session?.title, "test")
+    }
+
+    func testProjectDisplayNameIsUsedForHoverExpandStatusStripTitle() {
+        let session = makeSession(
+            status: .running,
+            title: "Running Claude Code terminal session: macirland"
+        )
+
+        XCTAssertEqual(session.projectDisplayName, "macirland")
+        XCTAssertNotEqual(session.projectDisplayName, session.title)
+    }
+
     func testPanelUsesSubduedCardToneForSessionList() throws {
         let source = try String(contentsOfFile: "MacIrlandKit/Features/Panel/PanelView.swift", encoding: .utf8)
 
@@ -510,7 +598,9 @@ final class UIDisplayFormattingTests: XCTestCase {
         quickActions: [ReplyActionType] = [.continueExecution],
         bridgeTarget: BridgeTarget? = nil,
         replyCapabilityStatus: ReplyCapabilityStatus = .available,
-        replyCapabilityReason: String = "Ready"
+        replyCapabilityReason: String = "Ready",
+        title: String = "UI refresh",
+        sessionName: String = ""
     ) -> TaskSession {
         TaskSession(
             identity: SessionIdentity(
@@ -519,10 +609,11 @@ final class UIDisplayFormattingTests: XCTestCase {
                 windowIdentifier: "Claude Code · ui",
                 commandLine: "",
                 ttyIdentifier: "ttys001",
+                sessionName: sessionName,
                 startedAt: Date(timeIntervalSince1970: 0),
                 lastSeenAt: Date(timeIntervalSince1970: 0)
             ),
-            title: "UI refresh",
+            title: title,
             status: status,
             priority: 1,
             confidence: 0.92,
