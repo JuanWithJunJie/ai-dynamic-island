@@ -219,7 +219,7 @@ final class AppLaunchSupportTests: XCTestCase {
         XCTAssertTrue(source.contains("let onJumpToSession: (TaskSession.ID) -> Void"))
         XCTAssertTrue(source.contains("HoverExpandSessionRow("))
         XCTAssertTrue(source.contains(".onTapGesture"))
-        XCTAssertTrue(source.contains("sessionName"))  // Uses sessionName for iTerm2 titles
+        XCTAssertTrue(source.contains("projectDisplayName"))  // Uses projectDisplayName for titles
         XCTAssertTrue(source.contains("terminalTypeLabel"))  // Shows terminal type badge
     }
 
