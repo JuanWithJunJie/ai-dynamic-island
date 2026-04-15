@@ -110,13 +110,19 @@ public struct HookEvent: Codable, Sendable {
     }
 
     /// Converts this hook event to a hook-driven session status.
+/// Key: Stop means task done waiting for next instruction (waitingForReply).
+/// Only SessionEnd means the session is truly finished (completed).
     public var hookStatus: HookSessionStatus {
         switch event {
         case .userPromptSubmit, .postToolUse:
             return .running
         case .permissionRequest:
             return .waitingForReply
-        case .stop, .sessionEnd:
+        case .stop:
+            // Stop = task complete, waiting for next user instruction
+            return .waitingForReply
+        case .sessionEnd:
+            // SessionEnd = session truly finished
             return .completed
         case .notification, .preCompact:
             return .idle

@@ -157,9 +157,8 @@ public enum TerminalJumpService {
     }
 
     private static func iTermJumpScript(session: TaskSession) -> String {
-        // iTerm2 session jump: use sessionName AND tty as the identifiers.
-        // sessionName uniquely identifies each iTerm2 session, but tty is needed
-        // when multiple sessions share the same sessionName (e.g., multiple "claude" sessions).
+        // iTerm2 session jump: TTY-first, fallback to sessionName.
+        // TTY is stable from hook events; sessionName can be stale.
         let targetSessionName = session.identity.sessionName.appleScriptEscaped
         let targetTTY = (session.identity.ttyIdentifier ?? "").appleScriptEscaped
 
@@ -191,9 +190,18 @@ public enum TerminalJumpService {
                             set sessionTTY to tty of eachSession
                         end try
 
-                        set matchResult to (sessionName is "\(targetSessionName)")
+                        -- TTY-first matching: use TTY as primary key (stable from hook).
+                        -- Fall back to sessionName if TTY is not available.
+                        set matchResult to false
                         if "\(targetTTY)" is not "" then
-                            set matchResult to (matchResult and (sessionTTY is "\(targetTTY)"))
+                            if sessionTTY is "\(targetTTY)" then
+                                set matchResult to true
+                            end if
+                        end if
+                        if matchResult is false and "\(targetSessionName)" is not "" then
+                            if sessionName is "\(targetSessionName)" then
+                                set matchResult to true
+                            end if
                         end if
 
                         set debugInfo to debugInfo & "Window[id=" & windowID & ",name=" & windowName & "] | tab sessions: " & (count of sessions of eachTab) as string & " | session: " & sessionName & " | tty: " & sessionTTY & " | target: '\(targetSessionName)' x '\(targetTTY)' | match: " & (matchResult as string) & return

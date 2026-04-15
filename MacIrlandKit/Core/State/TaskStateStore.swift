@@ -450,7 +450,9 @@ public final class TaskStateStore {
         let newStatus: TaskStatus
         switch event.hookStatus {
         case .idle:
-            newStatus = .running
+            // idle means no active work — don't force running
+            // keep as discovered so observation can update it
+            newStatus = .discovered
         case .running:
             newStatus = .running
         case .waitingForReply:
@@ -870,7 +872,8 @@ public final class TaskStateStore {
                 return .running
             }
         case .waitingInput, .replyAvailable:
-            if refreshedStatus == .completed {
+            // Hook said waiting — protect from observation's stale running/completed
+            if refreshedStatus == .completed || refreshedStatus == .running {
                 return existingStatus
             }
         default:

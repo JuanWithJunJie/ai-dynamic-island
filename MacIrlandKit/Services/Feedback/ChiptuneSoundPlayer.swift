@@ -39,7 +39,7 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         case .taskStarted:
             playSquareWave(frequency: 440, duration: 0.08)
         case .waitingForReply:
-            playSquareWave(frequency: 330, duration: 0.12)
+            playWaitingChiptune()
         case .completed:
             playCompletionChiptune()
         case .failed:
@@ -70,6 +70,27 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         }
     }
 
+    private func playWaitingChiptune() {
+        // 8-bit square wave: E4->G4->C5->E5->G5->C6 (Super Mario power-up sound)
+        let notes: [(frequency: Double, amplitude: Float)] = [
+            (329.63, 0.5),  // E4
+            (392.00, 0.5),  // G4
+            (523.25, 0.5),  // C5
+            (659.25, 0.5),  // E5
+            (783.99, 0.5),  // G5
+            (1046.50, 0.5), // C6
+        ]
+        let noteDelay: Double = 0.08  // quick succession
+
+        for (index, note) in notes.enumerated() {
+            let delay = Double(index) * noteDelay
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.playSquareWave(frequency: note.frequency, duration: 0.10, amplitude: note.amplitude)
+            }
+        }
+    }
+
+
     private func playCompletionChiptune() {
         // Pleasant ascending chime: C5 -> E5 -> G5 -> C6, played sequentially
         // Each note plays to completion before the next starts (no stopAllActiveNodes in between)
@@ -89,7 +110,7 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         }
     }
 
-    private func playSquareWave(frequency: Double, duration: Double) {
+    private func playSquareWave(frequency: Double, duration: Double, amplitude: Float = 0.3) {
         do {
             if !audioEngine.isRunning {
                 try audioEngine.start()
@@ -115,7 +136,7 @@ public final class ChiptuneSoundPlayer: SoundPlaying, @unchecked Sendable {
         let data = buffer.floatChannelData![0]
         for frame in 0..<Int(frameCount) {
             let phase = twoPi * frequency * Double(frame) / sampleRate
-            let squareValue: Float = sin(phase) > 0 ? 0.3 : -0.3
+            let squareValue: Float = sin(phase) > 0 ? amplitude : -amplitude
             let envelope = Float(1.0 - (Double(frame) / Double(frameCount)))
             data[frame] = squareValue * envelope
         }
