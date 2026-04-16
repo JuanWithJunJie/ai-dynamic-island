@@ -496,7 +496,7 @@ final class TaskStateStoreTests: XCTestCase {
             HookEvent(
                 sessionID: "hook-session-1",
                 cwd: "/Users/lijunjie/Documents/AIproject/macirland",
-                event: .stop,
+                event: .sessionEnd,
                 status: "completed",
                 pid: 123,
                 tty: "/dev/ttys031"
@@ -1595,7 +1595,7 @@ final class TaskStateStoreTests: XCTestCase {
             HookEvent(
                 sessionID: hookSessionID,
                 cwd: "/Users/test/macirland",
-                event: .stop,
+                event: .sessionEnd,
                 status: "completed",
                 pid: 100,
                 tty: "ttys030"
@@ -1620,7 +1620,7 @@ final class TaskStateStoreTests: XCTestCase {
             HookEvent(
                 sessionID: "hook-project-title",
                 cwd: "/Users/test/macirland",
-                event: .stop,
+                event: .sessionEnd,
                 status: "completed",
                 pid: 100,
                 tty: "ttys030"
@@ -1655,7 +1655,7 @@ final class TaskStateStoreTests: XCTestCase {
             HookEvent(
                 sessionID: "hook-old",
                 cwd: "/Users/test/macirland",
-                event: .stop,
+                event: .sessionEnd,
                 status: "completed",
                 pid: 100,
                 tty: "ttys030"

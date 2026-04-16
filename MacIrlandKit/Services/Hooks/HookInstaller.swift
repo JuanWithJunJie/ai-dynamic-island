@@ -87,6 +87,18 @@ public final class HookInstaller {
         fileManager.fileExists(atPath: config.hookScriptPath.path)
     }
 
+    /// Checks whether the installed hook script differs from the bundled version.
+    /// Returns true if the bundled script is different (newer) than the installed one.
+    public func needsUpdate() -> Bool {
+        guard fileManager.fileExists(atPath: config.hookScriptPath.path),
+              let installed = try? String(contentsOf: config.hookScriptPath, encoding: .utf8),
+              let bundled = try? String(contentsOf: config.bundledScriptPath, encoding: .utf8)
+        else {
+            return false
+        }
+        return installed != bundled
+    }
+
     /// Installs the hook script to ~/.claude/hooks/macirland.py
     /// and sets appropriate permissions.
     public func install() throws {

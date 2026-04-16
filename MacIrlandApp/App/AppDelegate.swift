@@ -47,6 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 NSLog("HookSocketServer: failed to repair hook registration - %@", error.localizedDescription)
             }
+        } else if installer.needsUpdate() {
+            do {
+                try installer.install()
+                NSLog("HookSocketServer: updated hook script to new version")
+            } catch {
+                NSLog("HookSocketServer: failed to update hook script - %@", error.localizedDescription)
+            }
         }
 
         let server = HookSocketServer()
