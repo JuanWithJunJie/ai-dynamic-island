@@ -13,10 +13,10 @@ macOS AI CLI 会话观察器。观察 Claude Code 在终端里的运行状态，
 
 ## Island 界面说明
 
-| 状态 | 图标颜色 | 含义 |
-|------|---------|------|
-| 绿色动画点 | 运行中 | Claude Code 正在执行任务 |
-| 橙色省略号 | 等待输入 | 等待你的下一步指示 |
+| 状态 | 图标 | 含义 |
+|------|------|------|
+| 绿色动画点 | terminal 图标 + 4 个逐步亮起的点 | Claude Code 正在执行任务 |
+| 橙色省略号脉冲 | 等待输入 | 等待你的下一步指示 |
 | 橙色对勾 | 已完成 | 任务执行完毕 |
 | 红色边框 | 告警 | 出现错误或警告 |
 
@@ -24,6 +24,7 @@ macOS AI CLI 会话观察器。观察 Claude Code 在终端里的运行状态，
 - 鼠标悬停到 island → 展开显示当前会话详情和所有会话列表
 - 点击会话行 → 跳转到对应的 Terminal/iTerm2 tab
 - 移动鼠标离开 → 收起 island
+- hover expand 右上角可开关声音提示
 
 ## 安装
 
@@ -52,7 +53,7 @@ swift build --configuration release
 bash Scripts/install-hooks.sh
 ```
 
-然后重启 Claude Code。
+然后重启 Claude Code。App 启动时会自动检测并更新 hook 脚本版本。
 
 ### 权限授权
 
@@ -86,9 +87,9 @@ Scripts/           — Hook 安装脚本、开发运行脚本
 
 - Swift + SwiftUI + AppKit
 - `@Observable` 状态管理
-- Unix Domain Socket（Hook IPC）
+- Hook-first 架构（Unix Domain Socket + AppleScript 回退）
 - AppleScript（Terminal/iTerm2 读写）
-- AVFoundation（Chiptune 音效合成）
+- AVFoundation（8-bit Chiptune 音效合成）
 
 ## 构建与测试
 
