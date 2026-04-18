@@ -28,21 +28,49 @@ macOS AI CLI 会话观察器。观察 Claude Code 在终端里的运行状态，
 
 ## 安装
 
-### 方式一：使用已编译版本
+### 方式一：直接下载（推荐）
+
+1. 下载最新版本：
+   https://github.com/JuanWithJunJie/ai-dynamic-island/releases/latest
+
+2. 解压并将 `MacIrland.app` 拖到 `/Applications` 文件夹
+
+3. **首次启动时的安全提示**（正常现象）：
+   - macOS 会显示"无法验证开发者"
+   - **不要**点击"取消"
+   - 右键点击 `MacIrland.app`，选择"打开"
+   - 弹出确认框，点击"打开"
+
+   ```
+   ┌─────────────────────────────────────┐
+   │ "MacIrland.app" can't be opened    │
+   │ because it is from an unidentified │
+   │ developer.                        │
+   │                                    │
+   │ [Cancel]          [Open]           │
+   └─────────────────────────────────────┘
+   ```
+
+4. 授权自动化权限：
+   - 系统设置 → 隐私与安全性 → 自动化
+   - 找到 MacIrland，勾选 Terminal 和 iTerm2
+
+### 方式二：Homebrew
 
 ```bash
-open ~/Applications/MacIrland.app
+brew install JuanWithJunJie/macirland/macirland
+macirland  # 下载并启动 app
 ```
 
-如果是首次安装，需要在**系统设置 > 隐私与安全性**中允许运行。
+首次启动同样需要右键 → 打开。
 
-### 方式二：从源码构建
+### 方式三：从源码构建
 
 ```bash
 git clone https://github.com/JuanWithJunJie/ai-dynamic-island.git
 cd ai-dynamic-island
-swift build --configuration release
-# 然后将 .build/arm64-apple-macosx/release/MacIrland 打包为 app
+./Scripts/build-release.sh
+# 解压 .build/release/MacIrland-v*.zip，将 app 拖到 /Applications
 ```
 
 ### 启用 Claude Code Hook
@@ -54,14 +82,6 @@ bash Scripts/install-hooks.sh
 ```
 
 然后重启 Claude Code。App 启动时会自动检测并更新 hook 脚本版本。
-
-### 权限授权
-
-首次运行时会提示需要以下权限：
-
-1. **自动化权限** — 用于读取 Terminal/iTerm2 会话状态和发送指令
-   - 系统设置 > 隐私与安全性 > 隐私 > 自动化
-   - 找到 MacIrland，勾选 Terminal 和 iTerm2
 
 ## 使用
 
